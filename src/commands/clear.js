@@ -5,8 +5,8 @@ const { isDJ, djOnlyMessage } = require('../permissions');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('stop')
-    .setDescription('Stop afspilning, ryd køen og forlad voice channel'),
+    .setName('clear')
+    .setDescription('Tøm køen (uden at stoppe den nuværende sang)'),
 
   async execute(interaction) {
     if (!isDJ(interaction)) {
@@ -15,14 +15,16 @@ module.exports = {
 
     const queue = useQueue(interaction.guildId);
 
-    if (!queue) {
+    if (!queue || queue.tracks.size === 0) {
       return interaction.reply({
-        content: 'Botten er ikke tilsluttet en voice channel.',
+        content: 'Køen er allerede tom.',
         flags: MessageFlags.Ephemeral,
       });
     }
 
-    queue.delete();
-    return interaction.reply(withEmoji('Stoppede afspilning og forlod voice channel.'));
+    const count = queue.tracks.size;
+    queue.tracks.clear();
+
+    return interaction.reply(withEmoji(`Fjernede **${count}** sange fra køen.`));
   },
 };

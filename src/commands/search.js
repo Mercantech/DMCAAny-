@@ -2,40 +2,51 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { useMainPlayer, QueryType } = require('discord-player');
 const { withEmoji } = require('../emoji');
 
-const EASTER_EGGS = {
-  rickroll: 'never gonna give you up rick astley',
-  'never gonna': 'never gonna give you up rick astley',
-  darude: 'darude sandstorm',
-  sandstorm: 'darude sandstorm',
-  'crab rave': 'noisestorm crab rave',
-  doot: 'spooky scary skeletons',
-  'megalovania': 'undertale megalovania',
-  'all star': 'smash mouth all star',
-};
-
-function applyEasterEgg(query) {
-  const lower = String(query).toLowerCase().trim();
-  if (EASTER_EGGS[lower]) return EASTER_EGGS[lower];
-  for (const [key, value] of Object.entries(EASTER_EGGS)) {
-    if (lower === key) return value;
-  }
-  return query;
+function truncate(str, max = 95) {
+  if (!str) return 'Ukendt';
+  return str.length <= max ? str : `${str.slice(0, max - 1)}…`;
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('play')
-    .setDescription('Afspil en sang fra YouTube eller SoundCloud')
+    .setName('search')
+    .setDescription('Søg på YouTube og vælg blandt top-5 resultater')
     .addStringOption((option) =>
       option
         .setName('forespørgsel')
-        .setDescription('Søgeord, YouTube-link eller SoundCloud-link')
-        .setRequired(true),
+        .setDescription('Begynd at skrive – forslag dukker op')
+        .setRequired(true)
+        .setAutocomplete(true),
     ),
 
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused();
+    if (!focused || focused.length < 2) {
+      return interaction.respond([]);
+    }
+
+    const player = useMainPlayer();
+    try {
+      const results = await player.search(focused, {
+        searchEngine: QueryType.YOUTUBE_SEARCH,
+      });
+
+      const choices = (results.tracks ?? [])
+        .slice(0, 5)
+        .map((track) => ({
+          name: truncate(`${track.title} — ${track.author} [${track.duration}]`),
+          value: track.url.length > 100 ? track.url.slice(0, 100) : track.url,
+        }));
+
+      return interaction.respond(choices);
+    } catch (error) {
+      console.error('[search autocomplete] Fejl:', error.message ?? error);
+      return interaction.respond([]);
+    }
+  },
+
   async execute(interaction) {
-    const rawQuery = interaction.options.getString('forespørgsel', true);
-    const query = applyEasterEgg(rawQuery);
+    const query = interaction.options.getString('forespørgsel', true);
     const voiceChannel = interaction.member?.voice?.channel;
 
     if (!voiceChannel) {
@@ -66,7 +77,7 @@ module.exports = {
 
       return interaction.followUp(withEmoji(`Tilføjet **${track.title}** til køen.`));
     } catch (error) {
-      console.error('Fejl i /play:', error);
+      console.error('Fejl i /search:', error);
       return interaction.followUp(`Kunne ikke afspille: ${error.message ?? 'ukendt fejl'}`);
     }
   },

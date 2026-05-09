@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { useQueue } = require('discord-player');
+const { withEmoji } = require('../emoji');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,6 +25,6 @@ module.exports = {
     }
 
     queue.node.pause();
-    return interaction.reply('Afspilning sat på pause.');
+    return interaction.reply(withEmoji('Afspilning sat på pause.'));
   },
 };

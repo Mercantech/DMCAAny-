@@ -4,12 +4,39 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 ## Funktioner
 
+**Afspilning:**
 - `/play <forespørgsel>` – søg på navn eller indsæt et YouTube/SoundCloud-link
-- `/skip` – spring den nuværende sang over
-- `/stop` – stop afspilning, ryd kø og forlad voice channel
+- `/search <forespørgsel>` – søg med autocomplete (top 5 forslag)
+- `/pause` / `/resume` – pause og fortsæt
+- `/replay` – start nuværende sang forfra
+- `/seek <tid>` – spol til position (`90`, `1:30` eller `1:00:00`)
+- `/volume <0-200>` – justér lydstyrke
+
+**Kø:**
 - `/queue` – vis køen
-- `/pause` – sæt afspilningen på pause
-- `/resume` – fortsæt afspilningen
+- `/nowplaying` – detaljeret embed med progress bar og thumbnail
+- `/skip` / `/voteskip` – DJ skipper direkte; alle andre stemmer
+- `/jump <position>` – hop direkte til et bestemt track
+- `/remove <position>` – fjern et bestemt track
+- `/clear` – tøm køen (uden at stoppe nuværende)
+- `/shuffle` – bland køen
+- `/loop <off|track|queue|autoplay>` – loop-mode
+- `/stop` – stop og forlad voice channel
+
+**Sociale:**
+- `/history` – seneste 10 afspillede tracks
+- `/save` – få nuværende sang som DM
+
+**Admin:**
+- `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
+
+**Diverse:**
+- `/help` – komplet kommando-oversigt
+- `/ping` – latency og uptime
+
+**Knapper:** Hver gang en sang starter får du et embed med knapper – Pause/Resume, Skip, Loop, Shuffle, Stop. Ingen grund til at skrive kommandoer.
+
+**Eastereggs:** prøv `/play rickroll`, `/play darude`, `/play crab rave`, `/play megalovania`...
 
 ## Krav
 
@@ -96,24 +123,33 @@ Hvis du hellere vil køre botten i en container (med FFmpeg automatisk installer
 
 Botten genstarter automatisk hvis containeren går ned (`restart: unless-stopped`).
 
+## Persistens
+
+DJ-rolle og afspilningshistorik gemmes i `/app/data/store.json` inde i containeren. I `docker-compose.yml` mountes en navngivet volume `bot-data` til den sti, så data overlever rebuilds og restarts.
+
 ## Projektstruktur
 
 ```text
 .
-├── Dockerfile            # Container-image med Node.js + FFmpeg
-├── docker-compose.yml    # Bot-service + deploy-profil
+├── Dockerfile
+├── docker-compose.yml
 ├── .dockerignore
 └── src/
-    ├── index.js              # Entry point – login og command-loader
-    ├── player.js             # discord-player + extractors
-    ├── deploy-commands.js    # Registrer slash commands
-    └── commands/             # Én fil pr. slash command
-        ├── play.js
-        ├── skip.js
-        ├── stop.js
-        ├── queue.js
-        ├── pause.js
-        └── resume.js
+    ├── index.js                # Entry point – login, command/button/autocomplete dispatcher
+    ├── player.js               # discord-player + extractors + history-tracking
+    ├── deploy-commands.js      # Slash command registrering
+    ├── emoji.js                # Custom emoji helper
+    ├── permissions.js          # isDJ() helper
+    ├── storage.js              # JSON file store (DJ-rolle, history)
+    ├── voteskip.js             # In-memory voteskip state
+    ├── components/
+    │   └── playerControls.js   # Knapper på "Spiller nu"-embeds
+    └── commands/               # En fil pr. slash command
+        ├── play.js, skip.js, stop.js, queue.js, pause.js, resume.js
+        ├── volume.js, loop.js, shuffle.js, clear.js, remove.js
+        ├── jump.js, replay.js, seek.js, search.js, nowplaying.js
+        ├── voteskip.js, dj.js, history.js, save.js
+        └── help.js, ping.js
 ```
 
 ## Tech stack

@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { useQueue } = require('discord-player');
+const { withEmoji } = require('../emoji');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -27,7 +28,7 @@ module.exports = {
     const level = interaction.options.getInteger('niveau');
 
     if (level === null) {
-      return interaction.reply(`Nuværende volume: **${queue.node.volume}%**`);
+      return interaction.reply(withEmoji(`Nuværende volume: **${queue.node.volume}%**`));
     }
 
     const ok = queue.node.setVolume(level);
@@ -38,6 +39,6 @@ module.exports = {
       });
     }
 
-    return interaction.reply(`Volume sat til **${level}%** af ${interaction.user}.`);
+    return interaction.reply(withEmoji(`Volume sat til **${level}%** af ${interaction.user}.`));
   },
 };

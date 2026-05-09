@@ -2,6 +2,10 @@ const { Player } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
 const youtubedl = require('youtube-dl-exec');
+const { withEmoji } = require('./emoji');
+const { addHistory } = require('./storage');
+const { buildControls, buildNowPlayingEmbed } = require('./components/playerControls');
+const { clearForGuild } = require('./voteskip');
 
 async function streamWithYtDlp(track) {
   const url = await youtubedl(track.url, {
@@ -41,23 +45,35 @@ async function setupPlayer(client) {
   });
 
   player.events.on('playerStart', (queue, track) => {
-    queue.metadata?.channel?.send(`Spiller nu: **${track.title}**`).catch(() => {});
+    if (queue.guild?.id) {
+      addHistory(queue.guild.id, {
+        title: track.title,
+        url: track.url,
+        addedBy: track.requestedBy?.id ?? null,
+      });
+      clearForGuild(queue.guild.id);
+    }
+
+    queue.metadata?.channel
+      ?.send({ embeds: [buildNowPlayingEmbed(track)], components: buildControls(queue) })
+      .catch(() => {});
   });
 
   player.events.on('audioTrackAdd', (queue, track) => {
-    queue.metadata?.channel?.send(`Tilføjet til kø: **${track.title}**`).catch(() => {});
+    queue.metadata?.channel?.send(withEmoji(`Tilføjet til kø: **${track.title}**`)).catch(() => {});
   });
 
   player.events.on('disconnect', (queue) => {
-    queue.metadata?.channel?.send('Forlader voice channel.').catch(() => {});
+    if (queue.guild?.id) clearForGuild(queue.guild.id);
+    queue.metadata?.channel?.send(withEmoji('Forlader voice channel.')).catch(() => {});
   });
 
   player.events.on('emptyChannel', (queue) => {
-    queue.metadata?.channel?.send('Ingen i voice channel – forlader om lidt.').catch(() => {});
+    queue.metadata?.channel?.send(withEmoji('Ingen i voice channel – forlader om lidt.')).catch(() => {});
   });
 
   player.events.on('emptyQueue', (queue) => {
-    queue.metadata?.channel?.send('Køen er tom.').catch(() => {});
+    queue.metadata?.channel?.send(withEmoji('Køen er tom.')).catch(() => {});
   });
 
   player.events.on('error', (queue, error) => {

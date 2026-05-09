@@ -8,6 +8,8 @@ services:
       - .env
     init: true
     stop_grace_period: 10s
+    volumes:
+      - bot-data:/app/data
     logging:
       driver: json-file
       options:
@@ -21,3 +23,6 @@ services:
     env_file:
       - .env
     command: ["node", "src/deploy-commands.js"]
+
+volumes:
+  bot-data:

@@ -19,7 +19,10 @@ COPY package*.json ./
 COPY src ./src
 
 RUN useradd --create-home --shell /bin/bash bot \
+    && mkdir -p /app/data \
     && chown -R bot:bot /app
+
+VOLUME ["/app/data"]
 USER bot
 
 CMD ["node", "src/index.js"]

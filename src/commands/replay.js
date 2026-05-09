@@ -4,27 +4,27 @@ const { withEmoji } = require('../emoji');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('resume')
-    .setDescription('Fortsæt afspilningen efter pause'),
+    .setName('replay')
+    .setDescription('Start den nuværende sang forfra'),
 
   async execute(interaction) {
     const queue = useQueue(interaction.guildId);
 
-    if (!queue) {
+    if (!queue || !queue.currentTrack) {
       return interaction.reply({
-        content: 'Der er ingen aktiv kø.',
+        content: 'Der spilles ikke noget i øjeblikket.',
         flags: MessageFlags.Ephemeral,
       });
     }
 
-    if (!queue.node.isPaused()) {
+    const ok = await queue.node.seek(0);
+    if (!ok) {
       return interaction.reply({
-        content: 'Afspilningen er ikke på pause.',
+        content: 'Kunne ikke spole tilbage til start.',
         flags: MessageFlags.Ephemeral,
       });
     }
 
-    queue.node.resume();
-    return interaction.reply(withEmoji('Fortsætter afspilningen.'));
+    return interaction.reply(withEmoji(`Starter **${queue.currentTrack.title}** forfra.`));
   },
 };

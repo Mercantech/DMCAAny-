@@ -4,6 +4,8 @@ const path = require('node:path');
 const { Client, Collection, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const { setupPlayer } = require('./player');
 const { deployCommands } = require('./deploy-commands');
+const { handleButton } = require('./components/playerControls');
+const storage = require('./storage');
 
 if (!process.env.DISCORD_TOKEN) {
   console.error('DISCORD_TOKEN mangler i .env – kopier .env.example til .env og udfyld den.');
@@ -31,6 +33,32 @@ client.once(Events.ClientReady, (c) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton() && interaction.customId.startsWith('player:')) {
+    try {
+      await handleButton(interaction);
+    } catch (error) {
+      console.error('Fejl i player-knap:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction
+          .reply({ content: 'Der opstod en fejl.', flags: MessageFlags.Ephemeral })
+          .catch(() => {});
+      }
+    }
+    return;
+  }
+
+  if (interaction.isAutocomplete()) {
+    const command = client.commands.get(interaction.commandName);
+    if (command?.autocomplete) {
+      try {
+        await command.autocomplete(interaction);
+      } catch (error) {
+        console.error(`Fejl i autocomplete /${interaction.commandName}:`, error);
+      }
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
@@ -50,6 +78,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 (async () => {
+  storage.load();
   await setupPlayer(client);
 
   if (process.env.DEPLOY_ON_STARTUP !== 'false' && process.env.CLIENT_ID) {
