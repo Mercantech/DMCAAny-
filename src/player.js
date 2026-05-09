@@ -7,21 +7,60 @@ const { addHistory } = require('./storage');
 const { buildControls, buildNowPlayingEmbed } = require('./components/playerControls');
 const { clearForGuild } = require('./voteskip');
 
-async function streamWithYtDlp(track) {
-  const url = await youtubedl(track.url, {
+async function streamWithYtDlp(track, { source = 'youtube' } = {}) {
+  const opts = {
     format: 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
     getUrl: true,
     noWarnings: true,
     noCheckCertificates: true,
     preferFreeFormats: true,
-    youtubeSkipDashManifest: true,
-  });
+  };
+  if (source === 'youtube') {
+    opts.youtubeSkipDashManifest = true;
+  }
+
+  const url = await youtubedl(track.url, opts);
 
   if (typeof url !== 'string' || !url.trim()) {
     throw new Error('yt-dlp returnerede ingen stream-URL');
   }
 
   return url.trim().split('\n')[0];
+}
+
+function patchSoundCloudExtractor(player) {
+  const ext = [...player.extractors.store.values()].find((e) =>
+    (e.identifier ?? '').toLowerCase().includes('soundcloud'),
+  );
+
+  if (!ext) {
+    console.warn('[SoundCloud] Extractor ikke fundet – kan ikke patche stream() til yt-dlp.');
+    return;
+  }
+
+  const originalStream = ext.stream.bind(ext);
+  ext.stream = async (track) => {
+    try {
+      const url = await streamWithYtDlp(track, { source: 'soundcloud' });
+      return url;
+    } catch (error) {
+      console.error(
+        `[SoundCloud yt-dlp] Fejl for "${track.title}" (${track.url}):`,
+        error.shortMessage ?? error.message ?? error,
+      );
+      try {
+        return await originalStream(track);
+      } catch (fallbackError) {
+        console.error(
+          '[SoundCloud original stream] Fallback fejlede også:',
+          fallbackError.message ?? fallbackError,
+        );
+        throw fallbackError;
+      }
+    }
+  };
+
+  console.log(`[SoundCloud] Stream-metoden er nu routet gennem yt-dlp (extractor: ${ext.identifier}).`);
 }
 
 async function setupPlayer(client) {
@@ -36,13 +75,18 @@ async function setupPlayer(client) {
     disablePlayer: true,
     createStream: async (track) => {
       try {
-        return await streamWithYtDlp(track);
+        return await streamWithYtDlp(track, { source: 'youtube' });
       } catch (error) {
-        console.error(`[yt-dlp] Kunne ikke hente stream for "${track.title}":`, error.message ?? error);
+        console.error(
+          `[YouTube yt-dlp] Fejl for "${track.title}" (${track.url}):`,
+          error.shortMessage ?? error.message ?? error,
+        );
         throw error;
       }
     },
   });
+
+  patchSoundCloudExtractor(player);
 
   player.events.on('playerStart', (queue, track) => {
     if (queue.guild?.id) {
@@ -76,12 +120,23 @@ async function setupPlayer(client) {
     queue.metadata?.channel?.send(withEmoji('Køen er tom.')).catch(() => {});
   });
 
-  player.events.on('error', (queue, error) => {
-    console.error(`[Player error] ${queue.guild?.name}:`, error);
-  });
+  function logPlayerError(label, queue, error) {
+    const track = queue.currentTrack;
+    console.error(
+      `[${label}] guild=${queue.guild?.name} track="${track?.title}" url=${track?.url} source=${track?.source}\n` +
+        `  message: ${error?.message}\n` +
+        `  code: ${error?.code}\n` +
+        `  stack: ${error?.stack}`,
+    );
+    queue.metadata?.channel
+      ?.send(withEmoji(`Fejl ved afspilning af **${track?.title ?? 'sang'}**: \`${error?.message ?? 'ukendt'}\``))
+      .catch(() => {});
+  }
 
-  player.events.on('playerError', (queue, error) => {
-    console.error(`[Player error] ${queue.guild?.name}:`, error);
+  player.events.on('error', (queue, error) => logPlayerError('Player error', queue, error));
+  player.events.on('playerError', (queue, error) => logPlayerError('Audio player error', queue, error));
+  player.events.on('playerSkip', (queue, track) => {
+    console.warn(`[playerSkip] Auto-skipped "${track.title}" (${track.url}) – stream fejlede sandsynligvis.`);
   });
 
   return player;
