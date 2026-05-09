@@ -3,37 +3,47 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { REST, Routes } = require('discord.js');
 
-const { DISCORD_TOKEN, CLIENT_ID, GUILD_ID } = process.env;
-
-if (!DISCORD_TOKEN || !CLIENT_ID) {
-  console.error('DISCORD_TOKEN og CLIENT_ID skal være sat i .env');
-  process.exit(1);
-}
-
-const commands = [];
-const commandsPath = path.join(__dirname, 'commands');
-for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))) {
-  const command = require(path.join(commandsPath, file));
-  if (command?.data) {
-    commands.push(command.data.toJSON());
+function loadCommandData() {
+  const commands = [];
+  const commandsPath = path.join(__dirname, 'commands');
+  for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))) {
+    const command = require(path.join(commandsPath, file));
+    if (command?.data) {
+      commands.push(command.data.toJSON());
+    }
   }
+  return commands;
 }
 
-const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+async function deployCommands({ token, clientId, guildId } = {}) {
+  const t = token ?? process.env.DISCORD_TOKEN;
+  const c = clientId ?? process.env.CLIENT_ID;
+  const g = guildId ?? process.env.GUILD_ID;
 
-(async () => {
-  try {
-    console.log(`Deployer ${commands.length} slash commands...`);
+  if (!t || !c) {
+    throw new Error('DISCORD_TOKEN og CLIENT_ID skal være sat for at registrere kommandoer.');
+  }
 
-    const route = GUILD_ID
-      ? Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
-      : Routes.applicationCommands(CLIENT_ID);
+  const commands = loadCommandData();
+  const rest = new REST({ version: '10' }).setToken(t);
+  const route = g ? Routes.applicationGuildCommands(c, g) : Routes.applicationCommands(c);
 
-    const data = await rest.put(route, { body: commands });
+  console.log(`Deployer ${commands.length} slash commands...`);
+  const data = await rest.put(route, { body: commands });
+  console.log(
+    `Færdig! ${data.length} kommandoer registreret ${
+      g ? `på guild ${g}` : 'globalt (kan tage op til 1 time at vises)'
+    }.`,
+  );
 
-    console.log(`Færdig! ${data.length} kommandoer registreret ${GUILD_ID ? `på guild ${GUILD_ID}` : 'globalt (kan tage op til 1 time at vises)'}.`);
-  } catch (error) {
+  return data;
+}
+
+if (require.main === module) {
+  deployCommands().catch((error) => {
     console.error('Fejl ved deploy af kommandoer:', error);
     process.exit(1);
-  }
-})();
+  });
+}
+
+module.exports = { deployCommands, loadCommandData };

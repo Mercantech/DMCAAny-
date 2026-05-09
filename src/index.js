@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Client, Collection, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const { setupPlayer } = require('./player');
+const { deployCommands } = require('./deploy-commands');
 
 if (!process.env.DISCORD_TOKEN) {
   console.error('DISCORD_TOKEN mangler i .env – kopier .env.example til .env og udfyld den.');
@@ -50,5 +51,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 (async () => {
   await setupPlayer(client);
+
+  if (process.env.DEPLOY_ON_STARTUP !== 'false' && process.env.CLIENT_ID) {
+    try {
+      await deployCommands();
+    } catch (error) {
+      console.error('Kunne ikke registrere slash commands ved opstart:', error);
+    }
+  }
+
   await client.login(process.env.DISCORD_TOKEN);
 })();
