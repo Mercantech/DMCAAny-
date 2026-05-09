@@ -7,6 +7,7 @@ RUN apt-get update \
 WORKDIR /app
 
 FROM base AS deps
+ENV YOUTUBE_DL_SKIP_PYTHON_CHECK=1
 COPY package*.json ./
 RUN npm install --omit=dev
 
