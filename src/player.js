@@ -1,6 +1,24 @@
 const { Player } = require('discord-player');
 const { DefaultExtractors } = require('@discord-player/extractor');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
+const youtubedl = require('youtube-dl-exec');
+
+async function streamWithYtDlp(track) {
+  const url = await youtubedl(track.url, {
+    format: 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+    getUrl: true,
+    noWarnings: true,
+    noCheckCertificates: true,
+    preferFreeFormats: true,
+    youtubeSkipDashManifest: true,
+  });
+
+  if (typeof url !== 'string' || !url.trim()) {
+    throw new Error('yt-dlp returnerede ingen stream-URL');
+  }
+
+  return url.trim().split('\n')[0];
+}
 
 async function setupPlayer(client) {
   const player = new Player(client);
@@ -12,6 +30,14 @@ async function setupPlayer(client) {
       highWaterMark: 1 << 25,
     },
     disablePlayer: true,
+    createStream: async (track) => {
+      try {
+        return await streamWithYtDlp(track);
+      } catch (error) {
+        console.error(`[yt-dlp] Kunne ikke hente stream for "${track.title}":`, error.message ?? error);
+        throw error;
+      }
+    },
   });
 
   player.events.on('playerStart', (queue, track) => {
