@@ -7,7 +7,7 @@ const { addHistory } = require('./storage');
 const { buildControls, buildNowPlayingEmbed } = require('./components/playerControls');
 const { clearForGuild } = require('./voteskip');
 
-async function streamWithYtDlp(track, { source = 'youtube' } = {}) {
+async function streamWithYtDlpUrl(track, { source = 'youtube' } = {}) {
   const opts = {
     format: 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
     getUrl: true,
@@ -25,7 +25,45 @@ async function streamWithYtDlp(track, { source = 'youtube' } = {}) {
     throw new Error('yt-dlp returnerede ingen stream-URL');
   }
 
-  return url.trim().split('\n')[0];
+  return url.trim().split('\n').filter((l) => l.startsWith('http')).pop();
+}
+
+function streamWithYtDlpPipe(track) {
+  const subprocess = youtubedl.exec(
+    track.url,
+    {
+      format: 'bestaudio/best',
+      output: '-',
+      quiet: true,
+      noWarnings: true,
+      noCheckCertificates: true,
+      noPlaylist: true,
+    },
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+
+  subprocess.stderr?.on('data', (chunk) => {
+    const text = chunk.toString();
+    if (text.toLowerCase().includes('error')) {
+      console.error(`[yt-dlp pipe stderr] ${track.title}: ${text.trim()}`);
+    }
+  });
+
+  subprocess.on('error', (err) => {
+    console.error(`[yt-dlp pipe spawn error] ${track.title}:`, err.message ?? err);
+  });
+
+  if (!subprocess.stdout) {
+    throw new Error('yt-dlp subprocess har ingen stdout');
+  }
+
+  subprocess.stdout.on('error', (err) => {
+    if (err.code !== 'EPIPE' && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      console.error(`[yt-dlp pipe stdout error] ${track.title}:`, err.message ?? err);
+    }
+  });
+
+  return subprocess.stdout;
 }
 
 function patchSoundCloudExtractor(player) {
@@ -41,11 +79,10 @@ function patchSoundCloudExtractor(player) {
   const originalStream = ext.stream.bind(ext);
   ext.stream = async (track) => {
     try {
-      const url = await streamWithYtDlp(track, { source: 'soundcloud' });
-      return url;
+      return streamWithYtDlpPipe(track);
     } catch (error) {
       console.error(
-        `[SoundCloud yt-dlp] Fejl for "${track.title}" (${track.url}):`,
+        `[SoundCloud yt-dlp pipe] Fejl for "${track.title}" (${track.url}):`,
         error.shortMessage ?? error.message ?? error,
       );
       try {
@@ -60,7 +97,7 @@ function patchSoundCloudExtractor(player) {
     }
   };
 
-  console.log(`[SoundCloud] Stream-metoden er nu routet gennem yt-dlp (extractor: ${ext.identifier}).`);
+  console.log(`[SoundCloud] Stream-metoden er nu routet gennem yt-dlp pipe (extractor: ${ext.identifier}).`);
 }
 
 async function setupPlayer(client) {
@@ -75,7 +112,7 @@ async function setupPlayer(client) {
     disablePlayer: true,
     createStream: async (track) => {
       try {
-        return await streamWithYtDlp(track, { source: 'youtube' });
+        return await streamWithYtDlpUrl(track, { source: 'youtube' });
       } catch (error) {
         console.error(
           `[YouTube yt-dlp] Fejl for "${track.title}" (${track.url}):`,
