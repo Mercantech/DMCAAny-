@@ -1,0 +1,23 @@
+services:
+  bot:
+    build: .
+    image: dmcaany-bot:latest
+    container_name: dmcaany-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    init: true
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  deploy:
+    build: .
+    image: dmcaany-bot:latest
+    profiles: ["deploy"]
+    env_file:
+      - .env
+    command: ["node", "src/deploy-commands.js"]

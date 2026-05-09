@@ -1,0 +1,54 @@
+require('dotenv').config();
+const fs = require('node:fs');
+const path = require('node:path');
+const { Client, Collection, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
+const { setupPlayer } = require('./player');
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error('DISCORD_TOKEN mangler i .env – kopier .env.example til .env og udfyld den.');
+  process.exit(1);
+}
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+});
+
+client.commands = new Collection();
+
+const commandsPath = path.join(__dirname, 'commands');
+for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))) {
+  const command = require(path.join(commandsPath, file));
+  if (command?.data?.name && typeof command.execute === 'function') {
+    client.commands.set(command.data.name, command);
+  } else {
+    console.warn(`[WARN] Kommando ${file} mangler data eller execute().`);
+  }
+}
+
+client.once(Events.ClientReady, (c) => {
+  console.log(`Logget ind som ${c.user.tag} – klar til at spille musik!`);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(`Fejl i kommandoen /${interaction.commandName}:`, error);
+    const reply = { content: 'Der opstod en fejl under udførelsen af kommandoen.', flags: MessageFlags.Ephemeral };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(reply).catch(() => {});
+    } else {
+      await interaction.reply(reply).catch(() => {});
+    }
+  }
+});
+
+(async () => {
+  await setupPlayer(client);
+  await client.login(process.env.DISCORD_TOKEN);
+})();
