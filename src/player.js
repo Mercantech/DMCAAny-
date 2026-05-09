@@ -6,7 +6,13 @@ async function setupPlayer(client) {
   const player = new Player(client);
 
   await player.extractors.loadMulti(DefaultExtractors);
-  await player.extractors.register(YoutubeiExtractor, {});
+  await player.extractors.register(YoutubeiExtractor, {
+    streamOptions: {
+      useClient: 'ANDROID',
+      highWaterMark: 1 << 25,
+    },
+    disablePlayer: true,
+  });
 
   player.events.on('playerStart', (queue, track) => {
     queue.metadata?.channel?.send(`Spiller nu: **${track.title}**`).catch(() => {});
