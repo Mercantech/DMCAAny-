@@ -30,6 +30,40 @@ const CATEGORIES = [
     ],
   },
   {
+    name: 'Lyd & filtre',
+    commands: [
+      ['/filter add', 'Aktivér et FFmpeg-filter (bassboost, nightcore, 8D, ...)'],
+      ['/filter remove', 'Fjern et bestemt filter'],
+      ['/filter clear', 'Fjern alle filtre'],
+      ['/filter list', 'Vis aktive filtre'],
+      ['/eq', 'Equalizer-presets (flat, bass, treble, vocal, party, classical, rock)'],
+      ['/speed', 'Justér afspilningshastighed (0.5-2.0)'],
+      ['/audio quality', 'Slå auto loudness/anti-klipping til/fra (admin)'],
+    ],
+  },
+  {
+    name: 'Lyrics',
+    commands: [
+      ['/lyrics show', 'Hent og vis lyrics for nuværende sang'],
+      ['/lyrics live', 'Live scrolling lyrics (synced)'],
+      ['/lyrics stop', 'Stop live lyrics'],
+    ],
+  },
+  {
+    name: 'Sjov & spil',
+    commands: [
+      ['/guess start', 'Start "gæt sangen"-runde'],
+      ['/guess stop', 'Afslut den aktive runde'],
+      ['/guess leaderboard', 'Top 10 spillere'],
+      ['/guess reset', 'Nulstil alle scores (admin)'],
+      ['/mood', 'Tilføj en hel kø der matcher en vibe'],
+      ['/soundboard show', 'Vis soundboardet med knapper'],
+      ['/soundboard add', 'Tilføj en lyd (admin)'],
+      ['/soundboard remove', 'Fjern en lyd (admin)'],
+      ['/soundboard list', 'Vis alle lyde med URLs'],
+    ],
+  },
+  {
     name: 'Sociale',
     commands: [
       ['/history', 'Seneste afspillede sange'],

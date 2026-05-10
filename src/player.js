@@ -3,9 +3,10 @@ const { DefaultExtractors } = require('@discord-player/extractor');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
 const youtubedl = require('youtube-dl-exec');
 const { withEmoji } = require('./emoji');
-const { addHistory } = require('./storage');
+const { addHistory, getAudioQuality } = require('./storage');
 const { buildControls, buildNowPlayingEmbed } = require('./components/playerControls');
 const { clearForGuild } = require('./voteskip');
+const { ensureDefaultFilters } = require('./audio/filters');
 
 async function streamWithYtDlpUrl(track, { source = 'youtube' } = {}) {
   const opts = {
@@ -133,6 +134,11 @@ async function setupPlayer(client) {
         addedBy: track.requestedBy?.id ?? null,
       });
       clearForGuild(queue.guild.id);
+
+      const quality = getAudioQuality(queue.guild.id);
+      ensureDefaultFilters(queue, { quality }).catch((err) =>
+        console.warn('[playerStart] ensureDefaultFilters fejl:', err.message),
+      );
     }
 
     queue.metadata?.channel

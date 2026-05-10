@@ -23,18 +23,36 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 - `/loop <off|track|queue|autoplay>` – loop-mode
 - `/stop` – stop og forlad voice channel
 
+**Lyd & filtre:**
+- `/filter add/remove/clear/list <preset>` – FFmpeg-filtre (bassboost, nightcore, vaporwave, 8D, karaoke, treble, subboost, vibrato, tremolo, mono ...)
+- `/eq <preset>` – equalizer-presets (flat, bass, treble, vocal, party, classical, rock) eller `off`
+- `/speed <0.5-2.0>` – afspilningshastighed via `atempo`
+- `/audio quality <on|off|status>` – auto loudness/anti-klipping. Default: ON (softlimiter aktiveres automatisk på hver ny sang)
+
+**Lyrics:**
+- `/lyrics show` – henter og viser hele lyrics fra LRCLib
+- `/lyrics live` – synkroniserede lyrics der opdateres hvert 2.5 sek (max 8 min)
+- `/lyrics stop` – stop live lyrics-session
+
+**Sjov & spil:**
+- `/guess start` – start "gæt sangen"-runde (15-18 sek, 4 svarmuligheder, første rigtige svar vinder point)
+- `/guess leaderboard` – top 10 spillere på serveren
+- `/guess stop` / `/guess reset` – afslut runde / nulstil scores (admin)
+- `/mood <vibe>` – tilføj en hel kø med en stemning (chill, happy, workout, sad, focus, party, dansk)
+- `/soundboard show/list/add/remove` – server-soundboard med op til 25 lyde og knapper
+
 **Sociale:**
 - `/history` – seneste 10 afspillede tracks
 - `/save` – få nuværende sang som DM
 
 **Admin:**
-- `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
+- `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove + filter/eq/speed)
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
 - `/ping` – latency og uptime
 
-**Knapper:** Hver gang en sang starter får du et embed med knapper – Pause/Resume, Skip, Loop, Shuffle, Stop. Ingen grund til at skrive kommandoer.
+**Knapper:** Hver gang en sang starter får du et embed med knapper – Pause/Resume, Skip, Loop, Shuffle, Stop. Soundboardet og "gæt sangen" har også egne knapper.
 
 **Eastereggs:** prøv `/play rickroll`, `/play darude`, `/play crab rave`, `/play megalovania`...
 
@@ -125,7 +143,17 @@ Botten genstarter automatisk hvis containeren går ned (`restart: unless-stopped
 
 ## Persistens
 
-DJ-rolle og afspilningshistorik gemmes i `/app/data/store.json` inde i containeren. I `docker-compose.yml` mountes en navngivet volume `bot-data` til den sti, så data overlever rebuilds og restarts.
+Følgende per-server data gemmes i `/app/data/store.json` inde i containeren:
+
+- DJ-rolle
+- Afspilningshistorik (seneste 50 tracks)
+- Audio-quality-indstilling (auto softlimiter on/off)
+- "Gæt sangen"-scores
+- Soundboard-clips (op til 25 pr. server)
+
+Derudover kopieres seed-poolen for "gæt sangen" til `/app/data/guess-tracks.json` første gang botten starter, så du kan redigere den frit.
+
+I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, så data overlever rebuilds og restarts.
 
 ## Projektstruktur
 
@@ -136,19 +164,31 @@ DJ-rolle og afspilningshistorik gemmes i `/app/data/store.json` inde i container
 ├── .dockerignore
 └── src/
     ├── index.js                # Entry point – login, command/button/autocomplete dispatcher
-    ├── player.js               # discord-player + extractors + history-tracking
+    ├── player.js               # discord-player + extractors + history + auto-softlimiter
     ├── deploy-commands.js      # Slash command registrering
     ├── emoji.js                # Custom emoji helper
-    ├── permissions.js          # isDJ() helper
-    ├── storage.js              # JSON file store (DJ-rolle, history)
+    ├── permissions.js          # isDJ() / isAdmin() helpers
+    ├── storage.js              # JSON file store (DJ, history, audio quality, scores, sounds)
     ├── voteskip.js             # In-memory voteskip state
+    ├── audio/
+    │   ├── filters.js          # Wrappers omkring FFmpeg-filtre + EQ
+    │   └── presets.js          # Filter/EQ-preset data
+    ├── lyrics/
+    │   └── lrclib.js           # LRCLib HTTP-klient + synced parser
+    ├── games/
+    │   ├── guess.js            # State + track-loader for "gæt sangen"
+    │   └── guess-tracks.seed.json  # 45 velkendte sange som seed-pool
     ├── components/
-    │   └── playerControls.js   # Knapper på "Spiller nu"-embeds
+    │   ├── playerControls.js   # Knapper på "Spiller nu"-embeds
+    │   ├── guessButtons.js     # Knapper og handler for /guess
+    │   └── soundboard.js       # Knapper og handler for /soundboard
     └── commands/               # En fil pr. slash command
         ├── play.js, skip.js, stop.js, queue.js, pause.js, resume.js
         ├── volume.js, loop.js, shuffle.js, clear.js, remove.js
         ├── jump.js, replay.js, seek.js, search.js, nowplaying.js
         ├── voteskip.js, dj.js, history.js, save.js
+        ├── filter.js, eq.js, speed.js, audio.js
+        ├── lyrics.js, guess.js, mood.js, soundboard.js
         └── help.js, ping.js
 ```
 

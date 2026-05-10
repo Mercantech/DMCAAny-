@@ -49,11 +49,20 @@ function scheduleWrite() {
 function ensureGuild(guildId) {
   load();
   if (!data.guilds[guildId]) {
-    data.guilds[guildId] = { djRoleId: null, history: [] };
+    data.guilds[guildId] = {
+      djRoleId: null,
+      history: [],
+      audioQuality: true,
+      guessScores: {},
+      sounds: [],
+    };
   }
   const g = data.guilds[guildId];
   if (!Array.isArray(g.history)) g.history = [];
   if (typeof g.djRoleId === 'undefined') g.djRoleId = null;
+  if (typeof g.audioQuality === 'undefined') g.audioQuality = true;
+  if (!g.guessScores || typeof g.guessScores !== 'object') g.guessScores = {};
+  if (!Array.isArray(g.sounds)) g.sounds = [];
   return g;
 }
 
@@ -82,6 +91,63 @@ function getHistory(guildId, limit = 10) {
   return ensureGuild(guildId).history.slice(0, limit);
 }
 
+function getAudioQuality(guildId) {
+  return ensureGuild(guildId).audioQuality !== false;
+}
+
+function setAudioQuality(guildId, enabled) {
+  ensureGuild(guildId).audioQuality = !!enabled;
+  scheduleWrite();
+}
+
+function getGuessScores(guildId) {
+  return { ...ensureGuild(guildId).guessScores };
+}
+
+function addGuessPoint(guildId, userId, points = 1) {
+  const g = ensureGuild(guildId);
+  g.guessScores[userId] = (g.guessScores[userId] ?? 0) + points;
+  scheduleWrite();
+  return g.guessScores[userId];
+}
+
+function resetGuessScores(guildId) {
+  ensureGuild(guildId).guessScores = {};
+  scheduleWrite();
+}
+
+function getSounds(guildId) {
+  return ensureGuild(guildId).sounds.slice();
+}
+
+function findSound(guildId, name) {
+  const lower = name.toLowerCase();
+  return ensureGuild(guildId).sounds.find((s) => s.name.toLowerCase() === lower) ?? null;
+}
+
+function addSound(guildId, sound) {
+  const g = ensureGuild(guildId);
+  const lower = sound.name.toLowerCase();
+  if (g.sounds.some((s) => s.name.toLowerCase() === lower)) {
+    throw new Error(`Et sound med navnet "${sound.name}" findes allerede.`);
+  }
+  if (g.sounds.length >= 25) {
+    throw new Error('Maks 25 sounds per server (Discord button-grænse).');
+  }
+  g.sounds.push({ name: sound.name, url: sound.url, emoji: sound.emoji ?? null });
+  scheduleWrite();
+  return g.sounds.length;
+}
+
+function removeSound(guildId, name) {
+  const g = ensureGuild(guildId);
+  const lower = name.toLowerCase();
+  const before = g.sounds.length;
+  g.sounds = g.sounds.filter((s) => s.name.toLowerCase() !== lower);
+  if (g.sounds.length !== before) scheduleWrite();
+  return before - g.sounds.length;
+}
+
 function flush() {
   if (writeTimer) {
     clearTimeout(writeTimer);
@@ -104,5 +170,14 @@ module.exports = {
   setDjRole,
   addHistory,
   getHistory,
+  getAudioQuality,
+  setAudioQuality,
+  getGuessScores,
+  addGuessPoint,
+  resetGuessScores,
+  getSounds,
+  findSound,
+  addSound,
+  removeSound,
   flush,
 };

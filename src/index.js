@@ -5,6 +5,8 @@ const { Client, Collection, GatewayIntentBits, Events, MessageFlags } = require(
 const { setupPlayer } = require('./player');
 const { deployCommands } = require('./deploy-commands');
 const { handleButton } = require('./components/playerControls');
+const { handleGuessButton } = require('./components/guessButtons');
+const { handleSoundButton } = require('./components/soundboard');
 const storage = require('./storage');
 
 if (!process.env.DISCORD_TOKEN) {
@@ -32,19 +34,28 @@ client.once(Events.ClientReady, (c) => {
   console.log(`Logget ind som ${c.user.tag} – klar til at spille musik!`);
 });
 
+const BUTTON_HANDLERS = [
+  { prefix: 'player:', handler: handleButton, label: 'player' },
+  { prefix: 'guess:', handler: handleGuessButton, label: 'guess' },
+  { prefix: 'sound:', handler: handleSoundButton, label: 'sound' },
+];
+
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isButton() && interaction.customId.startsWith('player:')) {
-    try {
-      await handleButton(interaction);
-    } catch (error) {
-      console.error('Fejl i player-knap:', error);
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction
-          .reply({ content: 'Der opstod en fejl.', flags: MessageFlags.Ephemeral })
-          .catch(() => {});
+  if (interaction.isButton()) {
+    const match = BUTTON_HANDLERS.find((h) => interaction.customId.startsWith(h.prefix));
+    if (match) {
+      try {
+        await match.handler(interaction);
+      } catch (error) {
+        console.error(`Fejl i ${match.label}-knap:`, error);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction
+            .reply({ content: 'Der opstod en fejl.', flags: MessageFlags.Ephemeral })
+            .catch(() => {});
+        }
       }
+      return;
     }
-    return;
   }
 
   if (interaction.isAutocomplete()) {
