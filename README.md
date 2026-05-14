@@ -23,12 +23,6 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 - `/loop <off|track|queue|autoplay>` – loop-mode
 - `/stop` – stop og forlad voice channel
 
-**Lyd & filtre:**
-- `/filter add/remove/clear/list <preset>` – FFmpeg-filtre (bassboost, nightcore, vaporwave, 8D, karaoke, treble, subboost, vibrato, tremolo, mono ...)
-- `/eq <preset>` – equalizer-presets (flat, bass, treble, vocal, party, classical, rock) eller `off`
-- `/speed <0.5-2.0>` – afspilningshastighed via `atempo`
-- `/audio quality <on|off|status>` – auto loudness/anti-klipping. Default: ON (softlimiter aktiveres automatisk på hver ny sang)
-
 **Lyrics:**
 - `/lyrics show` – henter og viser hele lyrics fra LRCLib
 - `/lyrics live` – synkroniserede lyrics der opdateres hvert 2.5 sek (max 8 min)
@@ -46,7 +40,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 - `/save` – få nuværende sang som DM
 
 **Admin:**
-- `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove + filter/eq/speed)
+- `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -147,7 +141,6 @@ Følgende per-server data gemmes i `/app/data/store.json` inde i containeren:
 
 - DJ-rolle
 - Afspilningshistorik (seneste 50 tracks)
-- Audio-quality-indstilling (auto softlimiter on/off)
 - "Gæt sangen"-scores
 - Soundboard-clips (op til 25 pr. server)
 
@@ -164,15 +157,12 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
 ├── .dockerignore
 └── src/
     ├── index.js                # Entry point – login, command/button/autocomplete dispatcher
-    ├── player.js               # discord-player + extractors + history + auto-softlimiter
+    ├── player.js               # discord-player + extractors + history
     ├── deploy-commands.js      # Slash command registrering
     ├── emoji.js                # Custom emoji helper
     ├── permissions.js          # isDJ() / isAdmin() helpers
-    ├── storage.js              # JSON file store (DJ, history, audio quality, scores, sounds)
+    ├── storage.js              # JSON file store (DJ, history, scores, sounds)
     ├── voteskip.js             # In-memory voteskip state
-    ├── audio/
-    │   ├── filters.js          # Wrappers omkring FFmpeg-filtre + EQ
-    │   └── presets.js          # Filter/EQ-preset data
     ├── lyrics/
     │   └── lrclib.js           # LRCLib HTTP-klient + synced parser
     ├── games/
@@ -187,7 +177,6 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
         ├── volume.js, loop.js, shuffle.js, clear.js, remove.js
         ├── jump.js, replay.js, seek.js, search.js, nowplaying.js
         ├── voteskip.js, dj.js, history.js, save.js
-        ├── filter.js, eq.js, speed.js, audio.js
         ├── lyrics.js, guess.js, mood.js, soundboard.js
         └── help.js, ping.js
 ```

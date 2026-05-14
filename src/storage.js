@@ -52,7 +52,6 @@ function ensureGuild(guildId) {
     data.guilds[guildId] = {
       djRoleId: null,
       history: [],
-      audioQuality: true,
       guessScores: {},
       sounds: [],
     };
@@ -60,7 +59,6 @@ function ensureGuild(guildId) {
   const g = data.guilds[guildId];
   if (!Array.isArray(g.history)) g.history = [];
   if (typeof g.djRoleId === 'undefined') g.djRoleId = null;
-  if (typeof g.audioQuality === 'undefined') g.audioQuality = true;
   if (!g.guessScores || typeof g.guessScores !== 'object') g.guessScores = {};
   if (!Array.isArray(g.sounds)) g.sounds = [];
   return g;
@@ -89,15 +87,6 @@ function addHistory(guildId, entry) {
 
 function getHistory(guildId, limit = 10) {
   return ensureGuild(guildId).history.slice(0, limit);
-}
-
-function getAudioQuality(guildId) {
-  return ensureGuild(guildId).audioQuality !== false;
-}
-
-function setAudioQuality(guildId, enabled) {
-  ensureGuild(guildId).audioQuality = !!enabled;
-  scheduleWrite();
 }
 
 function getGuessScores(guildId) {
@@ -170,8 +159,6 @@ module.exports = {
   setDjRole,
   addHistory,
   getHistory,
-  getAudioQuality,
-  setAudioQuality,
   getGuessScores,
   addGuessPoint,
   resetGuessScores,
