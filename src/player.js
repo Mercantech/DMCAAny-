@@ -126,15 +126,18 @@ async function setupPlayer(client) {
   patchSoundCloudExtractor(player);
 
   player.events.on('playerStart', (queue, track) => {
-    if (queue.guild?.id) {
+    const isGuessGame = queue.metadata?.guessGame;
+
+    if (queue.guild?.id && !isGuessGame) {
       addHistory(queue.guild.id, {
         title: track.title,
         url: track.url,
         addedBy: track.requestedBy?.id ?? null,
       });
       clearForGuild(queue.guild.id);
-
     }
+
+    if (isGuessGame) return;
 
     queue.metadata?.channel
       ?.send({ embeds: [buildNowPlayingEmbed(track)], components: buildControls(queue) })
@@ -142,6 +145,7 @@ async function setupPlayer(client) {
   });
 
   player.events.on('audioTrackAdd', (queue, track) => {
+    if (queue.metadata?.guessGame) return;
     queue.metadata?.channel?.send(withEmoji(`Tilføjet til kø: **${track.title}**`)).catch(() => {});
   });
 
@@ -155,6 +159,7 @@ async function setupPlayer(client) {
   });
 
   player.events.on('emptyQueue', (queue) => {
+    if (queue.metadata?.guessGame) return;
     queue.metadata?.channel?.send(withEmoji('Køen er tom.')).catch(() => {});
   });
 

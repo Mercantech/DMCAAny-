@@ -40,7 +40,7 @@ const CATEGORIES = [
   {
     name: 'Sjov & spil',
     commands: [
-      ['/guess start', 'Start "gæt sangen"-runde'],
+      ['/guess start', 'Start "gæt sangen" med valgfrit antal sange'],
       ['/guess stop', 'Afslut den aktive runde'],
       ['/guess leaderboard', 'Top 10 spillere'],
       ['/guess reset', 'Nulstil alle scores (admin)'],

@@ -40,6 +40,21 @@ function pickRandomTrack(tracks) {
   return tracks[Math.floor(Math.random() * tracks.length)];
 }
 
+function pickRandomTracks(tracks, count) {
+  const unique = [];
+  const seen = new Set();
+
+  for (const track of tracks.sort(() => Math.random() - 0.5)) {
+    const key = String(track.title ?? track.query ?? '').toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(track);
+    if (unique.length >= count) break;
+  }
+
+  return unique;
+}
+
 function getActiveGame(guildId) {
   return activeGames.get(guildId) ?? null;
 }
@@ -58,6 +73,7 @@ function endGame(guildId) {
 module.exports = {
   loadTracks,
   pickRandomTrack,
+  pickRandomTracks,
   pickOptions,
   getActiveGame,
   startGame,

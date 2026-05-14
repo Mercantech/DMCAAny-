@@ -1,18 +1,20 @@
 const { SlashCommandBuilder, MessageFlags, EmbedBuilder } = require('discord.js');
-const { useMainPlayer, useQueue, QueryType } = require('discord-player');
+const { useQueue } = require('discord-player');
 const { withEmoji, getBotEmoji } = require('../emoji');
 const { getGuessScores, resetGuessScores } = require('../storage');
 const { isAdmin } = require('../permissions');
 const {
   loadTracks,
-  pickRandomTrack,
-  pickOptions,
+  pickRandomTracks,
   startGame,
   endGame,
   getActiveGame,
-  ROUND_DURATION_MS,
 } = require('../games/guess');
-const { buildGuessButtons, buildGuessEmbed } = require('../components/guessButtons');
+const { beginGuessGame } = require('../components/guessButtons');
+
+const DEFAULT_ROUNDS = 10;
+const MIN_ROUNDS = 1;
+const MAX_ROUNDS = 25;
 
 function randomId() {
   return Math.random().toString(36).slice(2, 10);
@@ -22,8 +24,20 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('guess')
     .setDescription('Gæt sangen – minigame')
-    .addSubcommand((sub) => sub.setName('start').setDescription('Start en ny runde'))
-    .addSubcommand((sub) => sub.setName('stop').setDescription('Afslut den aktive runde'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('start')
+        .setDescription('Start et nyt spil')
+        .addIntegerOption((option) =>
+          option
+            .setName('antal')
+            .setDescription(`Antal sange/runder (${MIN_ROUNDS}-${MAX_ROUNDS}, default ${DEFAULT_ROUNDS})`)
+            .setMinValue(MIN_ROUNDS)
+            .setMaxValue(MAX_ROUNDS)
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) => sub.setName('stop').setDescription('Afslut det aktive spil'))
     .addSubcommand((sub) => sub.setName('leaderboard').setDescription('Top 10 spillere på serveren'))
     .addSubcommand((sub) => sub.setName('reset').setDescription('Nulstil alle scores (admin)')),
 
@@ -56,16 +70,23 @@ module.exports = {
     if (sub === 'stop') {
       const game = endGame(interaction.guildId);
       const queue = useQueue(interaction.guildId);
-      if (queue && game) queue.node.skip();
+      if (queue && game) {
+        queue.tracks.clear();
+        if (queue.isPlaying()) queue.node.skip();
+        setTimeout(() => {
+          const latestQueue = useQueue(interaction.guildId);
+          if (latestQueue) latestQueue.metadata = { ...(latestQueue.metadata ?? {}), guessGame: false };
+        }, 1_000);
+      }
       return interaction.reply({
-        content: game ? `Stoppede runden. Svaret var **${game.correct.title}**.` : 'Ingen aktiv runde.',
+        content: game ? `Stoppede spillet. Sidste svar var **${game.correct?.title ?? 'ukendt'}**.` : 'Intet aktivt spil.',
       });
     }
 
     if (sub === 'start') {
       if (getActiveGame(interaction.guildId)) {
         return interaction.reply({
-          content: 'Der kører allerede en runde – brug `/guess stop` først.',
+          content: 'Der kører allerede et spil – brug `/guess stop` først.',
           flags: MessageFlags.Ephemeral,
         });
       }
@@ -78,6 +99,14 @@ module.exports = {
         });
       }
 
+      const queue = useQueue(interaction.guildId);
+      if (queue && queue.channel?.id !== voiceChannel.id) {
+        return interaction.reply({
+          content: 'Botten er allerede i en anden voice channel.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
       const tracks = loadTracks();
       if (tracks.length < 4) {
         return interaction.reply({
@@ -86,64 +115,57 @@ module.exports = {
         });
       }
 
-      const correct = pickRandomTrack(tracks);
-      const options = pickOptions(tracks, correct, 4);
-      const gameId = randomId();
-      const player = useMainPlayer();
+      const requestedRounds = interaction.options.getInteger('antal') ?? DEFAULT_ROUNDS;
+      const selectedTracks = pickRandomTracks(tracks, Math.min(requestedRounds, tracks.length));
+
+      if (selectedTracks.length < requestedRounds) {
+        return interaction.reply({
+          content: `Der er kun ${selectedTracks.length} unikke sange i poolen lige nu.`,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
 
       await interaction.deferReply();
 
-      try {
-        await player.play(voiceChannel, correct.query, {
-          searchEngine: QueryType.AUTO,
-          nodeOptions: {
-            metadata: { channel: interaction.channel },
-            leaveOnEnd: true,
-            leaveOnEndCooldown: 60_000,
-            leaveOnEmpty: true,
-            leaveOnEmptyCooldown: 60_000,
-            selfDeaf: true,
-            volume: 50,
-          },
-          requestedBy: interaction.user,
-        });
-      } catch (error) {
-        console.error('[/guess start] Kunne ikke afspille:', error);
-        return interaction.editReply(`Kunne ikke starte runden: ${error.message ?? 'ukendt fejl'}`);
+      if (queue) {
+        queue.metadata = { ...(queue.metadata ?? {}), channel: interaction.channel, guessGame: true };
+        queue.tracks.clear();
+        if (queue.isPlaying()) queue.node.skip();
       }
 
-      const round = {
-        id: gameId,
-        correct,
-        options,
-        durationMs: ROUND_DURATION_MS,
-        answeredBy: new Set(),
-      };
-
       const message = await interaction.editReply({
-        embeds: [buildGuessEmbed(round)],
-        components: buildGuessButtons(options, gameId),
+        content: `Starter gæt sangen med **${selectedTracks.length}** sange...`,
+        embeds: [],
+        components: [],
       });
 
-      const timer = setTimeout(async () => {
-        const stillActive = getActiveGame(interaction.guildId);
-        if (stillActive?.id !== gameId) return;
-        endGame(interaction.guildId);
-        const queue = useQueue(interaction.guildId);
-        if (queue) queue.node.skip();
-        await message
-          .edit({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle(`${getBotEmoji()} Tiden er gået!`)
-                .setDescription(`Det rigtige svar var **${correct.title}**.`),
-            ],
-            components: [],
-          })
-          .catch(() => {});
-      }, ROUND_DURATION_MS);
+      const game = {
+        id: randomId(),
+        guildId: interaction.guildId,
+        channel: interaction.channel,
+        voiceChannel,
+        requestedBy: interaction.user,
+        pool: tracks,
+        tracks: selectedTracks,
+        roundIndex: 0,
+        message,
+        timer: null,
+        roundComplete: false,
+      };
 
-      startGame(interaction.guildId, { ...round, timer });
+      startGame(interaction.guildId, game);
+
+      try {
+        await beginGuessGame(game);
+      } catch (error) {
+        endGame(interaction.guildId);
+        console.error('[/guess start] Kunne ikke starte spillet:', error);
+        return interaction.editReply({
+          content: `Kunne ikke starte spillet: ${error.message ?? 'ukendt fejl'}`,
+          embeds: [],
+          components: [],
+        });
+      }
     }
   },
 };

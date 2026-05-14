@@ -29,7 +29,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 - `/lyrics stop` – stop live lyrics-session
 
 **Sjov & spil:**
-- `/guess start` – start "gæt sangen"-runde (15-18 sek, 4 svarmuligheder, første rigtige svar vinder point)
+- `/guess start [antal]` – start "gæt sangen" med fx 10 sange; næste sang starter når der gættes rigtigt eller tiden løber ud
 - `/guess leaderboard` – top 10 spillere på serveren
 - `/guess stop` / `/guess reset` – afslut runde / nulstil scores (admin)
 - `/mood <vibe>` – tilføj en hel kø med en stemning (chill, happy, workout, sad, focus, party, dansk)
