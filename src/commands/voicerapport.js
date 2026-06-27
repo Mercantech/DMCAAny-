@@ -203,9 +203,11 @@ function buildAiSummary(sessions, days, nameOf) {
 
   const totals = buildUserTotals(sessions, now);
   if (totals.length) {
-    lines.push('Samlet tid pr. person (alene i parentes):');
-    for (const [userId, { totalMs, aloneMs }] of totals) {
-      lines.push(`- ${nameOf(userId)}: ${formatDuration(totalMs)} (${formatDuration(aloneMs)} alene)`);
+    lines.push('Samlet tid pr. person (alene / mute / deaf i parentes):');
+    for (const [userId, { totalMs, aloneMs, mutedMs, deafMs }] of totals) {
+      lines.push(
+        `- ${nameOf(userId)}: ${formatDuration(totalMs)} (alene ${formatDuration(aloneMs)}, mute ${formatDuration(mutedMs || 0)}, deaf ${formatDuration(deafMs || 0)})`,
+      );
     }
   }
 
@@ -262,7 +264,7 @@ function chunkFieldValue(text) {
   return chunks;
 }
 
-/** Samlet VC-tid pr. bruger + alenetid (fra co-presence-segmenter). */
+/** Samlet VC-tid pr. bruger + alenetid (fra co-presence-segmenter) + mute/deaf. */
 function buildUserTotals(sessions, now) {
   const totals = new Map();
   for (const ch of groupSessionsByChannel(sessions)) {
@@ -273,13 +275,31 @@ function buildUserTotals(sessions, now) {
       const dur = seg.end - seg.start;
       const alone = seg.userIds.length === 1;
       for (const uid of seg.userIds) {
-        if (!totals.has(uid)) totals.set(uid, { totalMs: 0, aloneMs: 0 });
+        if (!totals.has(uid)) {
+          totals.set(uid, { totalMs: 0, aloneMs: 0, mutedMs: 0, deafMs: 0 });
+        }
         const row = totals.get(uid);
         row.totalMs += dur;
         if (alone) row.aloneMs += dur;
       }
     }
   }
+
+  // Mute/deaf fra sessioner (inkl. igangværende)
+  for (const s of sessions) {
+    if (!totals.has(s.userId)) {
+      totals.set(s.userId, { totalMs: 0, aloneMs: 0, mutedMs: 0, deafMs: 0 });
+    }
+    const row = totals.get(s.userId);
+    let mutedMs = s.mutedMs || 0;
+    let deafMs = s.deafMs || 0;
+    const end = s.leftAt ?? now;
+    if (s.muteSince != null) mutedMs += Math.max(0, end - s.muteSince);
+    if (s.deafSince != null) deafMs += Math.max(0, end - s.deafSince);
+    row.mutedMs += mutedMs;
+    row.deafMs += deafMs;
+  }
+
   return [...totals.entries()].sort((a, b) => b[1].totalMs - a[1].totalMs);
 }
 
@@ -287,12 +307,16 @@ function formatTotalsTable(sessions, now) {
   const rows = buildUserTotals(sessions, now);
   if (rows.length === 0) return null;
 
-  const lines = rows.map(([userId, { totalMs, aloneMs }]) => {
-    return `<@${userId}> · **${formatDuration(totalMs)}** (${formatDuration(aloneMs)} alene)`;
+  const lines = rows.map(([userId, { totalMs, aloneMs, mutedMs, deafMs }]) => {
+    const parts = [
+      `<@${userId}> · **${formatDuration(totalMs)}** (${formatDuration(aloneMs)} alene)`,
+    ];
+    if (mutedMs >= MIN_SEGMENT_MS) parts.push(`mute ${formatDuration(mutedMs)}`);
+    if (deafMs >= MIN_SEGMENT_MS) parts.push(`deaf ${formatDuration(deafMs)}`);
+    return parts.join(' · ');
   });
 
-  // Simpel "tabel"-header
-  return [`Bruger · samlet (alene)`, ...lines].join('\n');
+  return [`Bruger · samlet (alene) · mute/deaf`, ...lines].join('\n');
 }
 
 /** Tid sammen pr. duo (alle par i multi-person segmenter). */
