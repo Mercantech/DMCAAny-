@@ -11,6 +11,7 @@ let contextSeq = 0;
 const TONE_BUTTON_LABELS = {
   venlig: 'Venlig',
   roast: 'Roast',
+  mega: 'Mega',
   sarkastisk: 'Sarkastisk',
   hyggelig: 'Hyggelig',
   dramatisk: 'Dramatisk',
@@ -21,7 +22,6 @@ function pruneContexts() {
   for (const [id, ctx] of contexts) {
     if (ctx.createdAt < cutoff) contexts.delete(id);
   }
-  // Hard cap
   if (contexts.size > 200) {
     const oldest = [...contexts.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
     for (let i = 0; i < oldest.length - 150; i++) {
@@ -49,22 +49,27 @@ function getReportContext(id) {
 
 function buildToneButtons(activeTone, contextId) {
   const tone = normalizeTone(activeTone);
-  const row = new ActionRowBuilder();
+  const keys = Object.keys(TONES);
+  const rows = [];
 
-  for (const key of Object.keys(TONES)) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${PREFIX}${key}:${contextId}`)
-        .setLabel(TONE_BUTTON_LABELS[key] || key)
-        .setStyle(key === tone ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    );
+  for (let i = 0; i < keys.length; i += 5) {
+    const chunk = keys.slice(i, i + 5);
+    const row = new ActionRowBuilder();
+    for (const key of chunk) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${PREFIX}${key}:${contextId}`)
+          .setLabel(TONE_BUTTON_LABELS[key] || key)
+          .setStyle(key === tone ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      );
+    }
+    rows.push(row);
   }
 
-  return [row];
+  return rows;
 }
 
 function parseCustomId(customId) {
-  // voicerpt:<tone>:<contextId>
   if (!customId.startsWith(PREFIX)) return null;
   const rest = customId.slice(PREFIX.length);
   const colon = rest.indexOf(':');

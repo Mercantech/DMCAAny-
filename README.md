@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Viser også **Ugens par** (top-duoer). Tone: `venlig`, `roast`, `sarkastisk`, `hyggelig`, `dramatisk` — kan skiftes med knapper på DM’en. Morgen-review kl. 06:00 med dagen før + ugens par. Tracking kræver **ikke** VC-join.
+- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Viser også **Ugens par** (top-duoer). Tone: `venlig`, `roast`, `mega`, `sarkastisk`, `hyggelig`, `dramatisk` — kan skiftes med knapper på DM’en. Morgen-review kl. 06:00 (mega roast) springer **tomme dage** over (ingen VC ≥ 4 min). Tracking kræver **ikke** VC-join.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt

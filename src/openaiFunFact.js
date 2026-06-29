@@ -4,6 +4,7 @@ const TONES = {
   venlig: {
     label: 'Fun fact',
     temperature: 0.9,
+    max_tokens: 180,
     system:
       'Du er en venlig dansk kommentator for en Discord-server. ' +
       'Skriv PRÆCIS én kort fun fact (1–2 sætninger) om voice-aktiviteten. ' +
@@ -13,15 +14,28 @@ const TONES = {
   roast: {
     label: 'Roast',
     temperature: 1.0,
+    max_tokens: 180,
     system:
       'Du er en dansk roast-komiker for en Discord-server blandt venner. ' +
       'Skriv PRÆCIS én kort roast (1–2 sætninger) om voice-aktiviteten. ' +
       'Vær skarp, sjov og drilsk — men hold dig til dataene, ingen personlige angreb på udseende/identitet, ' +
       'ingen hadefuldt indhold. Ingen overskrifter, bullets eller emoji-spam.',
   },
+  mega: {
+    label: 'Mega roast',
+    temperature: 1.15,
+    max_tokens: 320,
+    system:
+      'Du er en MAXIMAL dansk roast-komiker til en Discord-server blandt gode venner. ' +
+      'Skriv en MEGA roast (2–4 sætninger) om voice-aktiviteten: overdrevet, kreativ, nådesløst sjov. ' +
+      'Brug dataene hårdt (alonetid, duoer, tidspunkter, kanaler). ' +
+      'Stadig kun venner-imellem: ingen had, ingen angreb på udseende/identitet/privatliv, intet seksuelt. ' +
+      'Ingen overskrifter, bullets eller emoji-spam.',
+  },
   sarkastisk: {
     label: 'Sarkasme',
     temperature: 0.95,
+    max_tokens: 180,
     system:
       'Du er en tør, sarkastisk dansk kommentator. ' +
       'Skriv PRÆCIS én kort bemærkning (1–2 sætninger) om voice-aktiviteten med understatement og ironi. ' +
@@ -30,6 +44,7 @@ const TONES = {
   hyggelig: {
     label: 'Hygge-fact',
     temperature: 0.85,
+    max_tokens: 180,
     system:
       'Du er en varm, hyggelig dansk kommentator. ' +
       'Skriv PRÆCIS én kort, positiv observation (1–2 sætninger) om voice-aktiviteten — ' +
@@ -38,6 +53,7 @@ const TONES = {
   dramatisk: {
     label: 'Drama',
     temperature: 1.0,
+    max_tokens: 180,
     system:
       'Du er en overdramatisk sports-/dokumentar-kommentator på dansk. ' +
       'Skriv PRÆCIS én kort, episk linje (1–2 sætninger) om voice-aktiviteten. ' +
@@ -47,6 +63,8 @@ const TONES = {
 
 function normalizeTone(tone) {
   const key = String(tone || 'venlig').toLowerCase().trim();
+  // aliases
+  if (key === 'megaroast' || key === 'mega_roast' || key === 'mega-roast') return 'mega';
   return TONES[key] ? key : 'venlig';
 }
 
@@ -74,7 +92,7 @@ async function generateVoiceFunFact(reportSummary, tone = 'venlig') {
       body: JSON.stringify({
         model,
         temperature: toneCfg.temperature,
-        max_tokens: 180,
+        max_tokens: toneCfg.max_tokens || 180,
         messages: [
           { role: 'system', content: toneCfg.system },
           {
@@ -94,7 +112,9 @@ async function generateVoiceFunFact(reportSummary, tone = 'venlig') {
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content?.trim();
     if (!text) return null;
-    return { text: text.slice(0, 500), tone: toneKey, label: toneCfg.label };
+    // Mega må gerne fylde lidt mere
+    const maxLen = toneKey === 'mega' ? 900 : 500;
+    return { text: text.slice(0, maxLen), tone: toneKey, label: toneCfg.label };
   } catch (error) {
     console.error('[openai] Fun fact fejl:', error.message);
     return null;

@@ -17,7 +17,7 @@ const FIELD_VALUE_MAX = 1000;
 const MIN_SEGMENT_MS = 4 * 60 * 1000;
 const REPORT_TIMEZONE = 'Europe/Copenhagen';
 const DM_TRIGGERS =
-  /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?(?:\s+(venlig|roast|sarkastisk|hyggelig|dramatisk))?$/i;
+  /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?(?:\s+(venlig|roast|mega|megaroast|sarkastisk|hyggelig|dramatisk))?$/i;
 
 function formatDate(ts) {
   return new Date(ts).toLocaleString('da-DK', {
@@ -660,6 +660,7 @@ module.exports = {
         .addChoices(
           { name: 'Venlig', value: 'venlig' },
           { name: 'Roast', value: 'roast' },
+          { name: 'Mega roast', value: 'mega' },
           { name: 'Sarkastisk', value: 'sarkastisk' },
           { name: 'Hyggelig', value: 'hyggelig' },
           { name: 'Dramatisk', value: 'dramatisk' },
