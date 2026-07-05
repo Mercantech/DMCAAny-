@@ -14,7 +14,7 @@ const { formatDateShort } = require('../copenhagenTime');
 
 const MAX_EMBEDS = 10;
 const FIELD_VALUE_MAX = 1000;
-const MIN_SEGMENT_MS = 60 * 1000;
+const MIN_SEGMENT_MS = 4 * 60 * 1000;
 const REPORT_TIMEZONE = 'Europe/Copenhagen';
 const DM_TRIGGERS =
   /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?(?:\s+(venlig|roast|sarkastisk|hyggelig|dramatisk))?$/i;
@@ -172,7 +172,7 @@ function formatChannelBody(channelGroup, now) {
   }
 
   if (lines.length === 0) {
-    return '_Ingen segmenter over 1 minut._';
+    return '_Ingen segmenter over 4 minutter._';
   }
 
   return lines.join('\n');
