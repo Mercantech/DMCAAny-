@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til den konfigurerede rapport-bruger (kræver Manage Guild eller rapport-brugeren). Tracking kræver **ikke** at botten joiner voice channels.
+- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til rapport-brugeren (Manage Guild eller rapport-brugeren). Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten med `rapport` eller `rapport 14`. Tracking kræver **ikke** at botten joiner voice channels.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -61,6 +61,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 - En Discord-bot oprettet i [Discord Developer Portal](https://discord.com/developers/applications) med:
   - Scopes: `bot` og `applications.commands`
   - Bot-permissions: `Connect`, `Speak`, `Send Messages`
+  - Privileged Gateway Intent: **Message Content Intent** (bruges til DM-kommandoen `rapport`)
 
 ## Opsætning
 
@@ -144,7 +145,7 @@ Følgende per-server data gemmes i `/app/data/store.json` inde i containeren:
 - Afspilningshistorik (seneste 50 tracks)
 - "Gæt sangen"-scores
 - Soundboard-clips (op til 25 pr. server)
-- Voice-sessioner (join/leave, seneste 90 dage) – overvåges via `VoiceStateUpdate` uden at botten joiner VC'erne
+- Voice-sessioner (join/leave, seneste 90 dage) – overvåges via `VoiceStateUpdate` uden at botten joiner VC'erne (kun den faste guild)
 
 Derudover kopieres seed-poolen for "gæt sangen" til `/app/data/guess-tracks.json` første gang botten starter, så du kan redigere den frit.
 
@@ -161,6 +162,7 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
     ├── index.js                # Entry point – login, command/button/autocomplete dispatcher
     ├── player.js               # discord-player + extractors + history
     ├── voiceTracker.js         # Voice join/leave logging (uden VC-join)
+    ├── voiceConfig.js          # Fast guild-/rapport-bruger-id
     ├── deploy-commands.js      # Slash command registrering
     ├── emoji.js                # Custom emoji helper
     ├── permissions.js          # isDJ() / isAdmin() helpers

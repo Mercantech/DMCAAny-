@@ -8,10 +8,11 @@ const {
 const { getBotEmoji, withEmoji } = require('../emoji');
 const { getVoiceSessions } = require('../storage');
 const { isAdmin } = require('../permissions');
+const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig');
 
-const VOICE_REPORT_USER_ID = '319100702376853505';
 const LINES_PER_EMBED = 25;
 const MAX_EMBEDS = 10;
+const DM_TRIGGERS = /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?$/i;
 
 function formatTime(ts) {
   return new Date(ts).toLocaleString('da-DK', {
@@ -34,7 +35,7 @@ function formatDuration(ms) {
 
 function canRun(interaction) {
   if (interaction.user.id === VOICE_REPORT_USER_ID) return true;
-  if (isAdmin(interaction.member)) return true;
+  if (interaction.inGuild() && isAdmin(interaction.member)) return true;
   return interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false;
 }
 
@@ -91,8 +92,64 @@ function buildEmbeds(lines, days, filterNote) {
   return embeds;
 }
 
+/**
+ * Bygger og sender voice-rapport som DM til rapport-brugeren.
+ * Data hentes altid fra VOICE_TRACK_GUILD_ID.
+ */
+async function sendVoiceReport(client, { days = 7, userId = null, channelId = null, channelName = null } = {}) {
+  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const sessions = getVoiceSessions(VOICE_TRACK_GUILD_ID, {
+    userId: userId ?? undefined,
+    channelId: channelId ?? undefined,
+    sinceMs,
+  });
+
+  const filterParts = [];
+  if (userId) filterParts.push(`Bruger: <@${userId}>`);
+  if (channelName || channelId) {
+    filterParts.push(`Kanal: #${channelName ?? channelId}`);
+  }
+  const filterNote = filterParts.length ? `\n${filterParts.join(' · ')}` : '';
+
+  const lines = buildLines(sessions);
+  const embeds = buildEmbeds(lines, days, filterNote);
+
+  const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
+  for (let i = 0; i < embeds.length; i += 10) {
+    await recipient.send({ embeds: embeds.slice(i, i + 10) });
+  }
+
+  return { sessions, recipient };
+}
+
+async function handleVoiceReportDm(message) {
+  if (message.author.bot) return false;
+  if (message.author.id !== VOICE_REPORT_USER_ID) return false;
+  if (message.guild) return false;
+
+  const text = message.content?.trim() ?? '';
+  const match = text.match(DM_TRIGGERS);
+  if (!match) return false;
+
+  let days = match[1] ? Number.parseInt(match[1], 10) : 7;
+  if (!Number.isFinite(days) || days < 1) days = 7;
+  if (days > 90) days = 90;
+
+  try {
+    const { sessions } = await sendVoiceReport(message.client, { days });
+    await message.reply(withEmoji(`Voice-rapport sendt (${sessions.length} sessioner, ${days} dage).`));
+  } catch (error) {
+    console.error('[voicerapport] DM-rapport fejlede:', error);
+    await message.reply(withEmoji('Kunne ikke sende rapporten. Prøv igen om lidt.')).catch(() => {});
+  }
+  return true;
+}
+
 module.exports = {
   VOICE_REPORT_USER_ID,
+  VOICE_TRACK_GUILD_ID,
+  sendVoiceReport,
+  handleVoiceReportDm,
 
   data: new SlashCommandBuilder()
     .setName('voicerapport')
@@ -127,30 +184,16 @@ module.exports = {
     const days = interaction.options.getInteger('dage') ?? 7;
     const user = interaction.options.getUser('bruger');
     const channel = interaction.options.getChannel('kanal');
-    const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
-
-    const sessions = getVoiceSessions(interaction.guildId, {
-      userId: user?.id,
-      channelId: channel?.id,
-      sinceMs,
-    });
-
-    const filterParts = [];
-    if (user) filterParts.push(`Bruger: <@${user.id}>`);
-    if (channel) filterParts.push(`Kanal: #${channel.name}`);
-    const filterNote = filterParts.length ? `\n${filterParts.join(' · ')}` : '';
-
-    const lines = buildLines(sessions);
-    const embeds = buildEmbeds(lines, days, filterNote);
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
-      const recipient = await interaction.client.users.fetch(VOICE_REPORT_USER_ID);
-      // Discord tillader max 10 embeds pr. besked
-      for (let i = 0; i < embeds.length; i += 10) {
-        await recipient.send({ embeds: embeds.slice(i, i + 10) });
-      }
+      const { sessions } = await sendVoiceReport(interaction.client, {
+        days,
+        userId: user?.id ?? null,
+        channelId: channel?.id ?? null,
+        channelName: channel?.name ?? null,
+      });
       return interaction.editReply(
         withEmoji(`Voice-rapport sendt som DM til <@${VOICE_REPORT_USER_ID}> (${sessions.length} sessioner).`),
       );
@@ -158,7 +201,7 @@ module.exports = {
       console.error('[voicerapport] Kunne ikke sende DM:', error);
       return interaction.editReply({
         content: withEmoji(
-          `Kunne ikke sende DM til <@${VOICE_REPORT_USER_ID}>. Tjek at brugeren tillader DM fra server-medlemmer.`,
+          `Kunne ikke sende DM til <@${VOICE_REPORT_USER_ID}>. Tjek at brugeren tillader DM fra botten.`,
         ),
       });
     }

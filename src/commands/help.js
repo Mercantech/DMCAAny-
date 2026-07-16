@@ -64,7 +64,7 @@ const CATEGORIES = [
       ['/dj set', 'Sæt en rolle som DJ-rolle'],
       ['/dj remove', 'Fjern DJ-rolle (alle får adgang igen)'],
       ['/dj show', 'Vis nuværende DJ-rolle'],
-      ['/voicerapport', 'Send voice-historik som DM til rapport-modtager (admin)'],
+      ['/voicerapport', 'Send voice-historik som DM (eller DM botten: rapport / rapport 14)'],
     ],
   },
   {

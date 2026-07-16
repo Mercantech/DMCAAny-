@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { startVoiceSession, endVoiceSession, reconcileVoiceSessions } = require('./storage');
+const { VOICE_TRACK_GUILD_ID } = require('./voiceConfig');
 
 function channelName(state) {
   return state.channel?.name ?? state.channelId ?? 'ukendt';
@@ -13,7 +14,7 @@ function isTrackable(memberOrUser) {
 
 function handleVoiceStateUpdate(oldState, newState) {
   const guildId = newState.guild?.id ?? oldState.guild?.id;
-  if (!guildId) return;
+  if (!guildId || guildId !== VOICE_TRACK_GUILD_ID) return;
 
   const member = newState.member ?? oldState.member;
   if (!isTrackable(member)) return;
@@ -63,14 +64,17 @@ function setupVoiceTracker(client) {
   });
 
   client.once(Events.ClientReady, (c) => {
-    for (const guild of c.guilds.cache.values()) {
+    const guild = c.guilds.cache.get(VOICE_TRACK_GUILD_ID);
+    if (guild) {
       try {
         snapshotGuild(guild);
       } catch (error) {
         console.error(`[voiceTracker] Snapshot fejlede for ${guild.id}:`, error);
       }
+    } else {
+      console.warn(`[voiceTracker] Guild ${VOICE_TRACK_GUILD_ID} er ikke i cache – snapshot sprunget over.`);
     }
-    console.log('[voiceTracker] Voice-overvågning aktiv (uden VC-join).');
+    console.log(`[voiceTracker] Voice-overvågning aktiv for guild ${VOICE_TRACK_GUILD_ID} (uden VC-join).`);
   });
 }
 
