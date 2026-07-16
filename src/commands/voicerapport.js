@@ -127,11 +127,17 @@ async function handleVoiceReportDm(message) {
   if (message.author.id !== VOICE_REPORT_USER_ID) return false;
   if (message.guild) return false;
 
+  // Uden Message Content Intent er content ofte tomt – enhver DM fra
+  // rapport-brugeren triggere derfor en standardrapport (7 dage).
+  // Hvis content findes, accepteres også "rapport" / "rapport 14".
   const text = message.content?.trim() ?? '';
-  const match = text.match(DM_TRIGGERS);
-  if (!match) return false;
+  let days = 7;
+  if (text.length > 0) {
+    const match = text.match(DM_TRIGGERS);
+    if (!match) return false;
+    if (match[1]) days = Number.parseInt(match[1], 10);
+  }
 
-  let days = match[1] ? Number.parseInt(match[1], 10) : 7;
   if (!Number.isFinite(days) || days < 1) days = 7;
   if (days > 90) days = 90;
 

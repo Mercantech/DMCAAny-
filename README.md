@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til rapport-brugeren (Manage Guild eller rapport-brugeren). Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten med `rapport` eller `rapport 14`. Tracking kræver **ikke** at botten joiner voice channels.
+- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til rapport-brugeren (Manage Guild eller rapport-brugeren). Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten (enhver besked → 7 dages rapport). Tracking kræver **ikke** at botten joiner voice channels.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -61,7 +61,6 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 - En Discord-bot oprettet i [Discord Developer Portal](https://discord.com/developers/applications) med:
   - Scopes: `bot` og `applications.commands`
   - Bot-permissions: `Connect`, `Speak`, `Send Messages`
-  - Privileged Gateway Intent: **Message Content Intent** (bruges til DM-kommandoen `rapport`)
 
 ## Opsætning
 
