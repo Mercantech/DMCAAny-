@@ -41,6 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
+- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til den konfigurerede rapport-bruger (kræver Manage Guild eller rapport-brugeren). Tracking kræver **ikke** at botten joiner voice channels.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -143,6 +144,7 @@ Følgende per-server data gemmes i `/app/data/store.json` inde i containeren:
 - Afspilningshistorik (seneste 50 tracks)
 - "Gæt sangen"-scores
 - Soundboard-clips (op til 25 pr. server)
+- Voice-sessioner (join/leave, seneste 90 dage) – overvåges via `VoiceStateUpdate` uden at botten joiner VC'erne
 
 Derudover kopieres seed-poolen for "gæt sangen" til `/app/data/guess-tracks.json` første gang botten starter, så du kan redigere den frit.
 
@@ -158,10 +160,11 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
 └── src/
     ├── index.js                # Entry point – login, command/button/autocomplete dispatcher
     ├── player.js               # discord-player + extractors + history
+    ├── voiceTracker.js         # Voice join/leave logging (uden VC-join)
     ├── deploy-commands.js      # Slash command registrering
     ├── emoji.js                # Custom emoji helper
     ├── permissions.js          # isDJ() / isAdmin() helpers
-    ├── storage.js              # JSON file store (DJ, history, scores, sounds)
+    ├── storage.js              # JSON file store (DJ, history, scores, sounds, voiceSessions)
     ├── voteskip.js             # In-memory voteskip state
     ├── lyrics/
     │   └── lrclib.js           # LRCLib HTTP-klient + synced parser
@@ -178,6 +181,7 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
         ├── jump.js, replay.js, seek.js, search.js, nowplaying.js
         ├── voteskip.js, dj.js, history.js, save.js
         ├── lyrics.js, guess.js, mood.js, soundboard.js
+        ├── voicerapport.js
         └── help.js, ping.js
 ```
 

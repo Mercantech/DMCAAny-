@@ -5,6 +5,7 @@ const DATA_DIR = process.env.DATA_DIR || '/app/data';
 const STORE_PATH = path.join(DATA_DIR, 'store.json');
 const HISTORY_LIMIT = 50;
 const WRITE_DEBOUNCE_MS = 1000;
+const VOICE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const defaultData = () => ({ guilds: {} });
 
@@ -54,6 +55,7 @@ function ensureGuild(guildId) {
       history: [],
       guessScores: {},
       sounds: [],
+      voiceSessions: [],
     };
   }
   const g = data.guilds[guildId];
@@ -61,7 +63,93 @@ function ensureGuild(guildId) {
   if (typeof g.djRoleId === 'undefined') g.djRoleId = null;
   if (!g.guessScores || typeof g.guessScores !== 'object') g.guessScores = {};
   if (!Array.isArray(g.sounds)) g.sounds = [];
+  if (!Array.isArray(g.voiceSessions)) g.voiceSessions = [];
   return g;
+}
+
+function pruneVoiceSessions(g) {
+  const cutoff = Date.now() - VOICE_RETENTION_MS;
+  const before = g.voiceSessions.length;
+  g.voiceSessions = g.voiceSessions.filter((s) => s.leftAt === null || s.leftAt >= cutoff);
+  return g.voiceSessions.length !== before;
+}
+
+function startVoiceSession(guildId, { userId, channelId, channelName }) {
+  const g = ensureGuild(guildId);
+  g.voiceSessions.push({
+    userId,
+    channelId,
+    channelName: channelName ?? channelId,
+    joinedAt: Date.now(),
+    leftAt: null,
+  });
+  pruneVoiceSessions(g);
+  scheduleWrite();
+}
+
+function endVoiceSession(guildId, { userId, channelId }) {
+  const g = ensureGuild(guildId);
+  for (let i = g.voiceSessions.length - 1; i >= 0; i--) {
+    const s = g.voiceSessions[i];
+    if (s.userId === userId && s.channelId === channelId && s.leftAt === null) {
+      s.leftAt = Date.now();
+      pruneVoiceSessions(g);
+      scheduleWrite();
+      return true;
+    }
+  }
+  return false;
+}
+
+function getVoiceSessions(guildId, { userId, channelId, sinceMs } = {}) {
+  const g = ensureGuild(guildId);
+  const since = typeof sinceMs === 'number' ? sinceMs : 0;
+  return g.voiceSessions
+    .filter((s) => {
+      if (userId && s.userId !== userId) return false;
+      if (channelId && s.channelId !== channelId) return false;
+      // Overlaps window: still open, or left at/after since
+      return s.leftAt === null || s.leftAt >= since;
+    })
+    .slice()
+    .sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
+function reconcileVoiceSessions(guildId, activeList) {
+  const g = ensureGuild(guildId);
+  const now = Date.now();
+  const activeKeys = new Set(activeList.map((a) => `${a.userId}:${a.channelId}`));
+  let changed = false;
+
+  for (const s of g.voiceSessions) {
+    if (s.leftAt !== null) continue;
+    const key = `${s.userId}:${s.channelId}`;
+    if (!activeKeys.has(key)) {
+      s.leftAt = now;
+      changed = true;
+    }
+  }
+
+  const openKeys = new Set(
+    g.voiceSessions.filter((s) => s.leftAt === null).map((s) => `${s.userId}:${s.channelId}`),
+  );
+
+  for (const active of activeList) {
+    const key = `${active.userId}:${active.channelId}`;
+    if (openKeys.has(key)) continue;
+    g.voiceSessions.push({
+      userId: active.userId,
+      channelId: active.channelId,
+      channelName: active.channelName ?? active.channelId,
+      joinedAt: now,
+      leftAt: null,
+    });
+    openKeys.add(key);
+    changed = true;
+  }
+
+  if (pruneVoiceSessions(g)) changed = true;
+  if (changed) scheduleWrite();
 }
 
 function getDjRole(guildId) {
@@ -166,5 +254,9 @@ module.exports = {
   findSound,
   addSound,
   removeSound,
+  startVoiceSession,
+  endVoiceSession,
+  getVoiceSessions,
+  reconcileVoiceSessions,
   flush,
 };

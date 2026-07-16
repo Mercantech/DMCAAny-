@@ -8,6 +8,7 @@ const { handleButton } = require('./components/playerControls');
 const { handleGuessButton } = require('./components/guessButtons');
 const { handleSoundButton } = require('./components/soundboard');
 const storage = require('./storage');
+const { setupVoiceTracker } = require('./voiceTracker');
 
 if (!process.env.DISCORD_TOKEN) {
   console.error('DISCORD_TOKEN mangler i .env – kopier .env.example til .env og udfyld den.');
@@ -91,6 +92,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 (async () => {
   storage.load();
   await setupPlayer(client);
+  setupVoiceTracker(client);
 
   if (process.env.DEPLOY_ON_STARTUP !== 'false' && process.env.CLIENT_ID) {
     try {
