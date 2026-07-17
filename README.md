@@ -144,7 +144,7 @@ Følgende per-server data gemmes i `/app/data/store.json` inde i containeren:
 - Afspilningshistorik (seneste 50 tracks)
 - "Gæt sangen"-scores
 - Soundboard-clips (op til 25 pr. server)
-- Voice-sessioner (join/leave, mute/deaf-tid, seneste 90 dage) – overvåges via `VoiceStateUpdate` uden at botten joiner VC'erne (kun den faste guild)
+- Voice-sessioner (join/leave, mute/deaf/live-tid, seneste 90 dage) – overvåges via `VoiceStateUpdate` uden at botten joiner VC'erne (kun den faste guild)
 
 Derudover kopieres seed-poolen for "gæt sangen" til `/app/data/guess-tracks.json` første gang botten starter, så du kan redigere den frit.
 

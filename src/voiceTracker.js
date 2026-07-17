@@ -21,7 +21,13 @@ function voiceFlags(state) {
   return {
     muted: !!(state.selfMute || state.serverMute),
     deafened: !!(state.selfDeaf || state.serverDeaf),
+    // Discord "Go Live" / skærmdeling
+    live: !!state.streaming,
   };
+}
+
+function flagsChanged(a, b) {
+  return a.muted !== b.muted || a.deafened !== b.deafened || a.live !== b.live;
 }
 
 function handleVoiceStateUpdate(oldState, newState) {
@@ -35,17 +41,18 @@ function handleVoiceStateUpdate(oldState, newState) {
   const oldChannelId = oldState.channelId;
   const newChannelId = newState.channelId;
 
-  // Samme kanal: mute/deaf-skift
+  // Samme kanal: mute/deaf/live-skift
   if (oldChannelId === newChannelId) {
     if (!newChannelId) return;
     const oldF = voiceFlags(oldState);
     const newF = voiceFlags(newState);
-    if (oldF.muted !== newF.muted || oldF.deafened !== newF.deafened) {
+    if (flagsChanged(oldF, newF)) {
       updateVoiceMuteDeaf(guildId, {
         userId,
         channelId: newChannelId,
         muted: newF.muted,
         deafened: newF.deafened,
+        live: newF.live,
       });
     }
     return;
@@ -63,6 +70,7 @@ function handleVoiceStateUpdate(oldState, newState) {
       channelName: channelName(newState),
       muted: flags.muted,
       deafened: flags.deafened,
+      live: flags.live,
     });
   }
 }
@@ -81,6 +89,7 @@ function snapshotGuild(guild) {
       channelName: state.channel?.name ?? state.channelId,
       muted: flags.muted,
       deafened: flags.deafened,
+      live: flags.live,
     });
   }
   reconcileVoiceSessions(guild.id, active);
@@ -107,7 +116,7 @@ function setupVoiceTracker(client) {
       console.warn(`[voiceTracker] Guild ${VOICE_TRACK_GUILD_ID} er ikke i cache – snapshot sprunget over.`);
     }
     console.log(
-      `[voiceTracker] Voice-overvågning aktiv for guild ${VOICE_TRACK_GUILD_ID} (mute/deaf + uden VC-join).`,
+      `[voiceTracker] Voice-overvågning aktiv for guild ${VOICE_TRACK_GUILD_ID} (mute/deaf/live + uden VC-join).`,
     );
   });
 }
