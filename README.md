@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Tone til AI-fun fact: `venlig` (default), `roast`, `sarkastisk`, `hyggelig`, `dramatisk`. Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten. Med `OPENAI_API_KEY` tilføjes fun fact. Tracking kræver **ikke** VC-join.
+- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Tone til AI-fun fact: `venlig` (default), `roast`, `sarkastisk`, `hyggelig`, `dramatisk`. Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten. Med `OPENAI_API_KEY` tilføjes fun fact. Hver morgen kl. 06:00 (dansk tid) sendes automatisk **aften-review** for dagen før (`VOICE_DAILY_REPORT`, `VOICE_DAILY_TONE`). Tracking kræver **ikke** VC-join.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -162,6 +162,8 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
     ├── player.js               # discord-player + extractors + history
     ├── voiceTracker.js         # Voice join/leave logging (uden VC-join)
     ├── voiceConfig.js          # Fast guild-/rapport-bruger-id
+    ├── voiceDailyReport.js     # Cron: aften-review kl. 06:00 dansk tid
+    ├── copenhagenTime.js       # Europe/Copenhagen dato/tid helpers
     ├── openaiFunFact.js        # OpenAI fun fact til voice-rapport
     ├── deploy-commands.js      # Slash command registrering
     ├── emoji.js                # Custom emoji helper

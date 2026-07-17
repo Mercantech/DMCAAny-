@@ -6,10 +6,11 @@ const {
   ChannelType,
 } = require('discord.js');
 const { getBotEmoji, withEmoji } = require('../emoji');
-const { getVoiceSessions } = require('../storage');
+const { getVoiceSessions, clipSessionsToWindow } = require('../storage');
 const { isAdmin } = require('../permissions');
 const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig');
 const { generateVoiceFunFact, normalizeTone } = require('../openaiFunFact');
+const { formatDateShort } = require('../copenhagenTime');
 
 const MAX_EMBEDS = 10;
 const FIELD_VALUE_MAX = 1000;
@@ -285,15 +286,21 @@ function formatTotalsTable(sessions, now) {
   return [`Bruger · samlet (alene)`, ...lines].join('\n');
 }
 
-function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
+function buildReportEmbeds(sessions, days, filterNote, funFact = null, options = {}) {
   const emoji = getBotEmoji();
   const now = Date.now();
+  const title = options.title || `${emoji} Voice-rapport`;
+  const descriptionExtra =
+    options.description || 'Hvem sad **sammen** i samme rum — tider er slået sammen.';
+  const periodLabel = options.periodLabel || `seneste ${days} dage`;
 
   if (sessions.length === 0) {
     return [
       new EmbedBuilder()
-        .setTitle(`${emoji} Voice-rapport`)
-        .setDescription(`Ingen voice-aktivitet i de seneste ${days} dag(e).${filterNote ? `\n${filterNote}` : ''}`)
+        .setTitle(title)
+        .setDescription(
+          `Ingen voice-aktivitet (${periodLabel}).${filterNote ? `\n${filterNote}` : ''}`,
+        )
         .setTimestamp(),
     ];
   }
@@ -306,7 +313,7 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
     ).length;
   }
 
-  const footer = `${togetherCount} samvær · ${channels.length} kanal(er) · seneste ${days} dage`;
+  const footer = `${togetherCount} samvær · ${channels.length} kanal(er) · ${periodLabel}`;
   const fields = [];
 
   if (funFact?.text) {
@@ -344,15 +351,13 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
   for (let i = 0; i < fields.length && embeds.length < MAX_EMBEDS; i += FIELDS_PER_EMBED) {
     const chunk = fields.slice(i, i + FIELDS_PER_EMBED);
     const embed = new EmbedBuilder()
-      .setTitle(i === 0 ? `${emoji} Voice-rapport` : `${emoji} Voice-rapport (fortsat)`)
+      .setTitle(i === 0 ? title : `${title} (fortsat)`)
       .setTimestamp()
       .setFooter({ text: footer })
       .addFields(chunk);
 
     if (i === 0) {
-      embed.setDescription(
-        [filterNote || null, 'Hvem sad **sammen** i samme rum — tider er slået sammen.'].filter(Boolean).join('\n'),
-      );
+      embed.setDescription([filterNote || null, descriptionExtra].filter(Boolean).join('\n'));
     }
 
     embeds.push(embed);
@@ -367,14 +372,34 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
  */
 async function sendVoiceReport(
   client,
-  { days = 7, userId = null, channelId = null, channelName = null, tone = 'venlig' } = {},
+  {
+    days = 7,
+    userId = null,
+    channelId = null,
+    channelName = null,
+    tone = 'venlig',
+    sinceMs = null,
+    untilMs = null,
+    title = null,
+    description = null,
+    periodLabel = null,
+  } = {},
 ) {
-  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
-  const sessions = getVoiceSessions(VOICE_TRACK_GUILD_ID, {
+  const emoji = getBotEmoji();
+  const rangeSince =
+    typeof sinceMs === 'number' ? sinceMs : Date.now() - days * 24 * 60 * 60 * 1000;
+  const rangeUntil = typeof untilMs === 'number' ? untilMs : undefined;
+
+  let sessions = getVoiceSessions(VOICE_TRACK_GUILD_ID, {
     userId: userId ?? undefined,
     channelId: channelId ?? undefined,
-    sinceMs,
+    sinceMs: rangeSince,
+    untilMs: rangeUntil,
   });
+
+  if (typeof untilMs === 'number') {
+    sessions = clipSessionsToWindow(sessions, rangeSince, untilMs);
+  }
 
   const filterParts = [];
   if (userId) filterParts.push(`Bruger: <@${userId}>`);
@@ -383,16 +408,28 @@ async function sendVoiceReport(
   }
   const filterNote = filterParts.length ? filterParts.join(' · ') : '';
 
+  const resolvedPeriod =
+    periodLabel ||
+    (typeof untilMs === 'number'
+      ? formatDateShort(rangeSince)
+      : `seneste ${days} dage`);
+
   const toneKey = normalizeTone(tone);
   let funFact = null;
   if (sessions.length > 0) {
     const uniqueIds = [...new Set(sessions.map((s) => s.userId))];
     const nameOf = await resolveDisplayNames(client, uniqueIds);
-    const summary = buildAiSummary(sessions, days, nameOf);
+    const summaryDays =
+      typeof untilMs === 'number' ? 1 : days;
+    const summary = buildAiSummary(sessions, summaryDays, nameOf);
     funFact = await generateVoiceFunFact(summary, toneKey);
   }
 
-  const embeds = buildReportEmbeds(sessions, days, filterNote, funFact);
+  const embeds = buildReportEmbeds(sessions, days, filterNote, funFact, {
+    title: title || `${emoji} Voice-rapport`,
+    description: description || 'Hvem sad **sammen** i samme rum — tider er slået sammen.',
+    periodLabel: resolvedPeriod,
+  });
 
   const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
   for (let i = 0; i < embeds.length; i += 10) {

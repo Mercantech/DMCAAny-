@@ -101,18 +101,38 @@ function endVoiceSession(guildId, { userId, channelId }) {
   return false;
 }
 
-function getVoiceSessions(guildId, { userId, channelId, sinceMs } = {}) {
+function getVoiceSessions(guildId, { userId, channelId, sinceMs, untilMs } = {}) {
   const g = ensureGuild(guildId);
   const since = typeof sinceMs === 'number' ? sinceMs : 0;
+  const until = typeof untilMs === 'number' ? untilMs : Number.POSITIVE_INFINITY;
   return g.voiceSessions
     .filter((s) => {
       if (userId && s.userId !== userId) return false;
       if (channelId && s.channelId !== channelId) return false;
-      // Overlaps window: still open, or left at/after since
-      return s.leftAt === null || s.leftAt >= since;
+      const end = s.leftAt === null ? Number.POSITIVE_INFINITY : s.leftAt;
+      // Overlap med [since, until)
+      return s.joinedAt < until && end > since;
     })
     .slice()
     .sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
+/** Klip sessioner til vindue (til dagsrapporter) — altid lukkede leftAt. */
+function clipSessionsToWindow(sessions, windowStart, windowEnd, now = Date.now()) {
+  const out = [];
+  for (const s of sessions) {
+    const sessionEnd = s.leftAt ?? now;
+    if (sessionEnd <= windowStart || s.joinedAt >= windowEnd) continue;
+    const joinedAt = Math.max(s.joinedAt, windowStart);
+    const leftAt = Math.min(sessionEnd, windowEnd);
+    if (leftAt <= joinedAt) continue;
+    out.push({
+      ...s,
+      joinedAt,
+      leftAt,
+    });
+  }
+  return out;
 }
 
 function reconcileVoiceSessions(guildId, activeList) {
@@ -257,6 +277,7 @@ module.exports = {
   startVoiceSession,
   endVoiceSession,
   getVoiceSessions,
+  clipSessionsToWindow,
   reconcileVoiceSessions,
   flush,
 };

@@ -10,6 +10,7 @@ const { handleSoundButton } = require('./components/soundboard');
 const storage = require('./storage');
 const { setupVoiceTracker } = require('./voiceTracker');
 const { handleVoiceReportDm } = require('./commands/voicerapport');
+const { setupVoiceDailyReport } = require('./voiceDailyReport');
 
 if (!process.env.DISCORD_TOKEN) {
   console.error('DISCORD_TOKEN mangler i .env – kopier .env.example til .env og udfyld den.');
@@ -39,6 +40,7 @@ for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'))
 
 client.once(Events.ClientReady, (c) => {
   console.log(`Logget ind som ${c.user.tag} – klar til at spille musik!`);
+  setupVoiceDailyReport(c);
 });
 
 client.on(Events.MessageCreate, async (message) => {
