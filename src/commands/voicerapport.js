@@ -209,6 +209,15 @@ function buildAiSummary(sessions, days, nameOf) {
     }
   }
 
+  const pairs = buildPairTotals(sessions, now).slice(0, 3);
+  if (pairs.length) {
+    lines.push('');
+    lines.push('Top-duoer (tid sammen):');
+    for (const row of pairs) {
+      lines.push(`- ${nameOf(row.a)} + ${nameOf(row.b)}: ${formatDuration(row.ms)}`);
+    }
+  }
+
   return lines.join('\n').trim();
 }
 
@@ -286,6 +295,44 @@ function formatTotalsTable(sessions, now) {
   return [`Bruger · samlet (alene)`, ...lines].join('\n');
 }
 
+/** Tid sammen pr. duo (alle par i multi-person segmenter). */
+function buildPairTotals(sessions, now) {
+  const pairs = new Map();
+  for (const ch of groupSessionsByChannel(sessions)) {
+    const segments = buildCoPresenceSegments(ch.sessions, now).filter(
+      (seg) => seg.userIds.length >= 2 && seg.end - seg.start >= MIN_SEGMENT_MS,
+    );
+    for (const seg of segments) {
+      const dur = seg.end - seg.start;
+      const ids = [...seg.userIds].sort();
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const key = `${ids[i]}|${ids[j]}`;
+          pairs.set(key, (pairs.get(key) || 0) + dur);
+        }
+      }
+    }
+  }
+  return [...pairs.entries()]
+    .map(([key, ms]) => {
+      const [a, b] = key.split('|');
+      return { a, b, ms };
+    })
+    .sort((x, y) => y.ms - x.ms);
+}
+
+function formatDuoTable(sessions, now, { limit = 3 } = {}) {
+  const rows = buildPairTotals(sessions, now).slice(0, limit);
+  if (rows.length === 0) return null;
+
+  const medals = ['🥇', '🥈', '🥉'];
+  const lines = rows.map((row, i) => {
+    const medal = medals[i] || `${i + 1}.`;
+    return `${medal} <@${row.a}> · <@${row.b}> — **${formatDuration(row.ms)}**`;
+  });
+  return lines.join('\n');
+}
+
 function buildReportEmbeds(sessions, days, filterNote, funFact = null, options = {}) {
   const emoji = getBotEmoji();
   const now = Date.now();
@@ -293,8 +340,11 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null, options =
   const descriptionExtra =
     options.description || 'Hvem sad **sammen** i samme rum — tider er slået sammen.';
   const periodLabel = options.periodLabel || `seneste ${days} dage`;
+  const duoLabel = options.duoLabel || (days <= 1 ? 'Dagens duo' : 'Ugens par');
+  const weekDuoSessions = options.weekDuoSessions || null;
+  const weekDuoLabel = options.weekDuoLabel || 'Ugens par';
 
-  if (sessions.length === 0) {
+  if (sessions.length === 0 && !weekDuoSessions?.length) {
     return [
       new EmbedBuilder()
         .setTitle(title)
@@ -323,6 +373,27 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null, options =
     });
   }
 
+  // Ugens par (fx på dagsrapport: separat 7-dages vindue)
+  if (weekDuoSessions?.length) {
+    const weekDuo = formatDuoTable(weekDuoSessions, now);
+    if (weekDuo) {
+      fields.push({ name: weekDuoLabel, value: weekDuo });
+    }
+  } else if (sessions.length) {
+    const periodDuo = formatDuoTable(sessions, now);
+    if (periodDuo) {
+      fields.push({ name: duoLabel, value: periodDuo });
+    }
+  }
+
+  // Dagens duo når ugens par allerede er vist separat
+  if (weekDuoSessions?.length && sessions.length && duoLabel !== weekDuoLabel) {
+    const dayDuo = formatDuoTable(sessions, now);
+    if (dayDuo) {
+      fields.push({ name: duoLabel, value: dayDuo });
+    }
+  }
+
   for (const ch of channels) {
     const body = formatChannelBody(ch, now);
     const chunks = chunkFieldValue(body);
@@ -343,6 +414,17 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null, options =
         value: chunk,
       });
     }
+  }
+
+  if (fields.length === 0) {
+    return [
+      new EmbedBuilder()
+        .setTitle(title)
+        .setDescription(
+          `Ingen voice-aktivitet (${periodLabel}).${filterNote ? `\n${filterNote}` : ''}`,
+        )
+        .setTimestamp(),
+    ];
   }
 
   const embeds = [];
@@ -414,21 +496,49 @@ async function sendVoiceReport(
       ? formatDateShort(rangeSince)
       : `seneste ${days} dage`);
 
+  const isDayReport = typeof untilMs === 'number';
+  const duoLabel = isDayReport ? 'Dagens duo' : days <= 1 ? 'Dagens duo' : 'Ugens par';
+
+  // Til dagsrapporter: også beregn ugens par (seneste 7 dage)
+  let weekDuoSessions = null;
+  if (isDayReport) {
+    const weekSince = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    weekDuoSessions = getVoiceSessions(VOICE_TRACK_GUILD_ID, {
+      userId: userId ?? undefined,
+      channelId: channelId ?? undefined,
+      sinceMs: weekSince,
+    });
+  }
+
   const toneKey = normalizeTone(tone);
   let funFact = null;
-  if (sessions.length > 0) {
-    const uniqueIds = [...new Set(sessions.map((s) => s.userId))];
-    const nameOf = await resolveDisplayNames(client, uniqueIds);
-    const summaryDays =
-      typeof untilMs === 'number' ? 1 : days;
-    const summary = buildAiSummary(sessions, summaryDays, nameOf);
+  if (sessions.length > 0 || weekDuoSessions?.length) {
+    const idSet = new Set(sessions.map((s) => s.userId));
+    if (weekDuoSessions) {
+      for (const s of weekDuoSessions) idSet.add(s.userId);
+    }
+    const nameOf = await resolveDisplayNames(client, [...idSet]);
+    const summaryDays = isDayReport ? 1 : days;
+    let summary = buildAiSummary(sessions, summaryDays, nameOf);
+    if (weekDuoSessions?.length) {
+      const weekPairs = buildPairTotals(weekDuoSessions, Date.now()).slice(0, 3);
+      if (weekPairs.length) {
+        summary += '\n\nUgens par (seneste 7 dage):\n';
+        summary += weekPairs
+          .map((row) => `- ${nameOf(row.a)} + ${nameOf(row.b)}: ${formatDuration(row.ms)}`)
+          .join('\n');
+      }
+    }
     funFact = await generateVoiceFunFact(summary, toneKey);
   }
 
-  const embeds = buildReportEmbeds(sessions, days, filterNote, funFact, {
+  const embeds = buildReportEmbeds(sessions, isDayReport ? 1 : days, filterNote, funFact, {
     title: title || `${emoji} Voice-rapport`,
     description: description || 'Hvem sad **sammen** i samme rum — tider er slået sammen.',
     periodLabel: resolvedPeriod,
+    duoLabel,
+    weekDuoSessions,
+    weekDuoLabel: 'Ugens par',
   });
 
   const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
