@@ -65,6 +65,7 @@ const CATEGORIES = [
       ['/dj remove', 'Fjern DJ-rolle (alle får adgang igen)'],
       ['/dj show', 'Vis nuværende DJ-rolle'],
       ['/voicerapport', 'Send voice-historik som DM + AI (tone: venlig/roast/mega/…)'],
+      ['/chateksport', 'Eksporter kanal-chat privat som DM (dage-limit)'],
     ],
   },
   {

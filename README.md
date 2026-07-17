@@ -42,6 +42,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
 - `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Viser også **Ugens par** (top-duoer). Tone: `venlig`, `roast`, `mega`, `sarkastisk`, `hyggelig`, `dramatisk` — kan skiftes med knapper på DM’en. Morgen-review kl. 06:00 (mega roast) springer **tomme dage** over (ingen VC ≥ 4 min). Tracking kræver **ikke** VC-join.
+- `/chateksport <kanal> [dage]` – eksporter en kanals chat privat (ephemeral) som `.txt` DM til rapport-brugeren. Kræver **Message Content Intent** i Developer Portal.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -60,7 +61,8 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
   - Linux: `sudo apt install ffmpeg`
 - En Discord-bot oprettet i [Discord Developer Portal](https://discord.com/developers/applications) med:
   - Scopes: `bot` og `applications.commands`
-  - Bot-permissions: `Connect`, `Speak`, `Send Messages`
+  - Bot-permissions: `Connect`, `Speak`, `Send Messages`, `Read Message History`
+  - Privileged Gateway Intent: **Message Content Intent** (påkrævet til `/chateksport`)
 
 ## Opsætning
 
@@ -187,6 +189,7 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
         ├── voteskip.js, dj.js, history.js, save.js
         ├── lyrics.js, guess.js, mood.js, soundboard.js
         ├── voicerapport.js
+        ├── chateksport.js
         └── help.js, ping.js
 ```
 
