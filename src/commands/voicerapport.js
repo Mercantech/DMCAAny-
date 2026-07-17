@@ -15,13 +15,30 @@ const FIELD_VALUE_MAX = 1000;
 const MIN_SEGMENT_MS = 60 * 1000;
 const DM_TRIGGERS = /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?$/i;
 
-function formatClock(ts) {
+function formatDate(ts) {
   return new Date(ts).toLocaleString('da-DK', {
     day: '2-digit',
     month: '2-digit',
+  });
+}
+
+function formatTimeOfDay(ts) {
+  return new Date(ts).toLocaleString('da-DK', {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/** Dato én gang pr. linje: `17.07 · 06.24–06.39` (slutdato kun ved døgnskift). */
+function formatRange(start, end) {
+  const startDate = formatDate(start);
+  const endDate = formatDate(end);
+  const startTime = formatTimeOfDay(start);
+  const endTime = formatTimeOfDay(end);
+  if (startDate === endDate) {
+    return `${startDate} · ${startTime}–${endTime}`;
+  }
+  return `${startDate}–${endDate} · ${startTime}–${endTime}`;
 }
 
 function formatDuration(ms) {
@@ -127,7 +144,7 @@ function formatChannelBody(channelGroup, now) {
     lines.push('**Sammen**');
     for (const seg of together) {
       lines.push(
-        `\`${formatClock(seg.start)}–${formatClock(seg.end)}\` (${formatDuration(seg.end - seg.start)})`,
+        `\`${formatRange(seg.start, seg.end)}\` (${formatDuration(seg.end - seg.start)})`,
       );
       lines.push(`→ ${mentionList(seg.userIds)}`);
     }
@@ -138,7 +155,7 @@ function formatChannelBody(channelGroup, now) {
     lines.push('**Alene**');
     for (const seg of solo) {
       lines.push(
-        `\`${formatClock(seg.start)}–${formatClock(seg.end)}\` · ${mentionList(seg.userIds)} (${formatDuration(seg.end - seg.start)})`,
+        `\`${formatRange(seg.start, seg.end)}\` · ${mentionList(seg.userIds)} (${formatDuration(seg.end - seg.start)})`,
       );
     }
   }
