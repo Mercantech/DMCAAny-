@@ -203,10 +203,10 @@ function buildAiSummary(sessions, days, nameOf) {
 
   const totals = buildUserTotals(sessions, now);
   if (totals.length) {
-    lines.push('Samlet tid pr. person (alene / mute / deaf / live):');
-    for (const [userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs }] of totals) {
+    lines.push('Samlet tid pr. person (alene / mute / deaf / live / cam):');
+    for (const [userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }] of totals) {
       lines.push(
-        `- ${nameOf(userId)}: ${formatDuration(totalMs)} (alene ${formatDuration(aloneMs)}, mute ${formatDuration(mutedMs || 0)}, deaf ${formatDuration(deafMs || 0)}, live ${formatDuration(liveMs || 0)})`,
+        `- ${nameOf(userId)}: ${formatDuration(totalMs)} (alene ${formatDuration(aloneMs)}, mute ${formatDuration(mutedMs || 0)}, deaf ${formatDuration(deafMs || 0)}, live ${formatDuration(liveMs || 0)}, cam ${formatDuration(camMs || 0)})`,
       );
     }
   }
@@ -264,7 +264,7 @@ function chunkFieldValue(text) {
   return chunks;
 }
 
-/** Samlet VC-tid pr. bruger + alenetid (fra co-presence-segmenter) + mute/deaf/live. */
+/** Samlet VC-tid pr. bruger + alenetid (fra co-presence-segmenter) + mute/deaf/live/cam. */
 function buildUserTotals(sessions, now) {
   const totals = new Map();
   for (const ch of groupSessionsByChannel(sessions)) {
@@ -276,7 +276,7 @@ function buildUserTotals(sessions, now) {
       const alone = seg.userIds.length === 1;
       for (const uid of seg.userIds) {
         if (!totals.has(uid)) {
-          totals.set(uid, { totalMs: 0, aloneMs: 0, mutedMs: 0, deafMs: 0, liveMs: 0 });
+          totals.set(uid, { totalMs: 0, aloneMs: 0, mutedMs: 0, deafMs: 0, liveMs: 0, camMs: 0 });
         }
         const row = totals.get(uid);
         row.totalMs += dur;
@@ -287,19 +287,22 @@ function buildUserTotals(sessions, now) {
 
   for (const s of sessions) {
     if (!totals.has(s.userId)) {
-      totals.set(s.userId, { totalMs: 0, aloneMs: 0, mutedMs: 0, deafMs: 0, liveMs: 0 });
+      totals.set(s.userId, { totalMs: 0, aloneMs: 0, mutedMs: 0, deafMs: 0, liveMs: 0, camMs: 0 });
     }
     const row = totals.get(s.userId);
     let mutedMs = s.mutedMs || 0;
     let deafMs = s.deafMs || 0;
     let liveMs = s.liveMs || 0;
+    let camMs = s.camMs || 0;
     const end = s.leftAt ?? now;
     if (s.muteSince != null) mutedMs += Math.max(0, end - s.muteSince);
     if (s.deafSince != null) deafMs += Math.max(0, end - s.deafSince);
     if (s.liveSince != null) liveMs += Math.max(0, end - s.liveSince);
+    if (s.camSince != null) camMs += Math.max(0, end - s.camSince);
     row.mutedMs += mutedMs;
     row.deafMs += deafMs;
     row.liveMs += liveMs;
+    row.camMs += camMs;
   }
 
   return [...totals.entries()].sort((a, b) => b[1].totalMs - a[1].totalMs);
@@ -309,17 +312,18 @@ function formatTotalsTable(sessions, now) {
   const rows = buildUserTotals(sessions, now);
   if (rows.length === 0) return null;
 
-  const lines = rows.map(([userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs }]) => {
+  const lines = rows.map(([userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }]) => {
     const parts = [
       `<@${userId}> · **${formatDuration(totalMs)}** (${formatDuration(aloneMs)} alene)`,
     ];
     if (mutedMs >= MIN_SEGMENT_MS) parts.push(`mute ${formatDuration(mutedMs)}`);
     if (deafMs >= MIN_SEGMENT_MS) parts.push(`deaf ${formatDuration(deafMs)}`);
     if (liveMs >= MIN_SEGMENT_MS) parts.push(`live ${formatDuration(liveMs)}`);
+    if (camMs >= MIN_SEGMENT_MS) parts.push(`cam ${formatDuration(camMs)}`);
     return parts.join(' · ');
   });
 
-  return [`Bruger · samlet (alene) · mute/deaf/live`, ...lines].join('\n');
+  return [`Bruger · samlet (alene) · mute/deaf/live/cam`, ...lines].join('\n');
 }
 
 /** Tid sammen pr. duo (alle par i multi-person segmenter). */

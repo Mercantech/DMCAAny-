@@ -78,12 +78,14 @@ function ensureMuteDeafFields(session) {
   if (typeof session.mutedMs !== 'number') session.mutedMs = 0;
   if (typeof session.deafMs !== 'number') session.deafMs = 0;
   if (typeof session.liveMs !== 'number') session.liveMs = 0;
+  if (typeof session.camMs !== 'number') session.camMs = 0;
   if (typeof session.muteSince === 'undefined') session.muteSince = null;
   if (typeof session.deafSince === 'undefined') session.deafSince = null;
   if (typeof session.liveSince === 'undefined') session.liveSince = null;
+  if (typeof session.camSince === 'undefined') session.camSince = null;
 }
 
-/** Læg pending mute/deaf/live-tid ind i accumulator og nulstil since-felter. */
+/** Læg pending mute/deaf/live/cam-tid ind i accumulator og nulstil since-felter. */
 function flushMuteDeaf(session, at = Date.now()) {
   ensureMuteDeafFields(session);
   if (session.muteSince != null) {
@@ -98,12 +100,16 @@ function flushMuteDeaf(session, at = Date.now()) {
     session.liveMs += Math.max(0, at - session.liveSince);
     session.liveSince = null;
   }
+  if (session.camSince != null) {
+    session.camMs += Math.max(0, at - session.camSince);
+    session.camSince = null;
+  }
 }
 
-/** Synkroniser mute/deaf/live-state. */
+/** Synkroniser mute/deaf/live/cam-state. */
 function applyMuteDeafState(
   session,
-  { muted = false, deafened = false, live = false } = {},
+  { muted = false, deafened = false, live = false, cam = false } = {},
   at = Date.now(),
 ) {
   ensureMuteDeafFields(session);
@@ -128,11 +134,18 @@ function applyMuteDeafState(
   } else if (session.liveSince == null && live) {
     session.liveSince = at;
   }
+
+  if (session.camSince != null && !cam) {
+    session.camMs += Math.max(0, at - session.camSince);
+    session.camSince = null;
+  } else if (session.camSince == null && cam) {
+    session.camSince = at;
+  }
 }
 
 function startVoiceSession(
   guildId,
-  { userId, channelId, channelName, muted = false, deafened = false, live = false },
+  { userId, channelId, channelName, muted = false, deafened = false, live = false, cam = false },
 ) {
   const g = ensureGuild(guildId);
   const now = Date.now();
@@ -145,9 +158,11 @@ function startVoiceSession(
     mutedMs: 0,
     deafMs: 0,
     liveMs: 0,
+    camMs: 0,
     muteSince: muted ? now : null,
     deafSince: deafened ? now : null,
     liveSince: live ? now : null,
+    camSince: cam ? now : null,
   });
   pruneVoiceSessions(g);
   scheduleWrite();
@@ -171,14 +186,14 @@ function endVoiceSession(guildId, { userId, channelId }) {
 
 function updateVoiceMuteDeaf(
   guildId,
-  { userId, channelId, muted = false, deafened = false, live = false },
+  { userId, channelId, muted = false, deafened = false, live = false, cam = false },
 ) {
   const g = ensureGuild(guildId);
   const now = Date.now();
   for (let i = g.voiceSessions.length - 1; i >= 0; i--) {
     const s = g.voiceSessions[i];
     if (s.userId === userId && s.channelId === channelId && s.leftAt === null) {
-      applyMuteDeafState(s, { muted, deafened, live }, now);
+      applyMuteDeafState(s, { muted, deafened, live, cam }, now);
       scheduleWrite();
       return true;
     }
@@ -201,16 +216,18 @@ function getVoiceSessions(guildId, { userId, channelId, sinceMs, untilMs } = {})
     .sort((a, b) => a.joinedAt - b.joinedAt);
 }
 
-/** Effektiv mute/deaf/live-tid inkl. igangværende perioder. */
+/** Effektiv mute/deaf/live/cam-tid inkl. igangværende perioder. */
 function effectiveMuteDeaf(session, now = Date.now()) {
   let mutedMs = session.mutedMs || 0;
   let deafMs = session.deafMs || 0;
   let liveMs = session.liveMs || 0;
+  let camMs = session.camMs || 0;
   const end = session.leftAt ?? now;
   if (session.muteSince != null) mutedMs += Math.max(0, end - session.muteSince);
   if (session.deafSince != null) deafMs += Math.max(0, end - session.deafSince);
   if (session.liveSince != null) liveMs += Math.max(0, end - session.liveSince);
-  return { mutedMs, deafMs, liveMs };
+  if (session.camSince != null) camMs += Math.max(0, end - session.camSince);
+  return { mutedMs, deafMs, liveMs, camMs };
 }
 
 /** Klip sessioner til vindue (til dagsrapporter) — altid lukkede leftAt. */
@@ -226,7 +243,7 @@ function clipSessionsToWindow(sessions, windowStart, windowEnd, now = Date.now()
     const origDur = Math.max(1, sessionEnd - s.joinedAt);
     const clipDur = leftAt - joinedAt;
     const ratio = Math.min(1, clipDur / origDur);
-    const { mutedMs, deafMs, liveMs } = effectiveMuteDeaf(s, now);
+    const { mutedMs, deafMs, liveMs, camMs } = effectiveMuteDeaf(s, now);
 
     out.push({
       ...s,
@@ -235,9 +252,11 @@ function clipSessionsToWindow(sessions, windowStart, windowEnd, now = Date.now()
       mutedMs: Math.round(mutedMs * ratio),
       deafMs: Math.round(deafMs * ratio),
       liveMs: Math.round(liveMs * ratio),
+      camMs: Math.round(camMs * ratio),
       muteSince: null,
       deafSince: null,
       liveSince: null,
+      camSince: null,
     });
   }
   return out;
@@ -273,6 +292,7 @@ function reconcileVoiceSessions(guildId, activeList) {
           muted: !!active.muted,
           deafened: !!active.deafened,
           live: !!active.live,
+          cam: !!active.cam,
         },
         now,
       );
@@ -288,9 +308,11 @@ function reconcileVoiceSessions(guildId, activeList) {
       mutedMs: 0,
       deafMs: 0,
       liveMs: 0,
+      camMs: 0,
       muteSince: active.muted ? now : null,
       deafSince: active.deafened ? now : null,
       liveSince: active.live ? now : null,
+      camSince: active.cam ? now : null,
     });
     openByKey.set(key, g.voiceSessions[g.voiceSessions.length - 1]);
     changed = true;

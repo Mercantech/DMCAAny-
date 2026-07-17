@@ -23,11 +23,18 @@ function voiceFlags(state) {
     deafened: !!(state.selfDeaf || state.serverDeaf),
     // Discord "Go Live" / skærmdeling
     live: !!state.streaming,
+    // Kamera
+    cam: !!state.selfVideo,
   };
 }
 
 function flagsChanged(a, b) {
-  return a.muted !== b.muted || a.deafened !== b.deafened || a.live !== b.live;
+  return (
+    a.muted !== b.muted ||
+    a.deafened !== b.deafened ||
+    a.live !== b.live ||
+    a.cam !== b.cam
+  );
 }
 
 function handleVoiceStateUpdate(oldState, newState) {
@@ -53,6 +60,7 @@ function handleVoiceStateUpdate(oldState, newState) {
         muted: newF.muted,
         deafened: newF.deafened,
         live: newF.live,
+        cam: newF.cam,
       });
     }
     return;
@@ -71,6 +79,7 @@ function handleVoiceStateUpdate(oldState, newState) {
       muted: flags.muted,
       deafened: flags.deafened,
       live: flags.live,
+      cam: flags.cam,
     });
   }
 }
@@ -90,6 +99,7 @@ function snapshotGuild(guild) {
       muted: flags.muted,
       deafened: flags.deafened,
       live: flags.live,
+      cam: flags.cam,
     });
   }
   reconcileVoiceSessions(guild.id, active);
@@ -116,7 +126,7 @@ function setupVoiceTracker(client) {
       console.warn(`[voiceTracker] Guild ${VOICE_TRACK_GUILD_ID} er ikke i cache – snapshot sprunget over.`);
     }
     console.log(
-      `[voiceTracker] Voice-overvågning aktiv for guild ${VOICE_TRACK_GUILD_ID} (mute/deaf/live + uden VC-join).`,
+      `[voiceTracker] Voice-overvågning aktiv for guild ${VOICE_TRACK_GUILD_ID} (mute/deaf/live/cam + uden VC-join).`,
     );
   });
 }
