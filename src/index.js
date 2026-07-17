@@ -7,6 +7,7 @@ const { deployCommands } = require('./deploy-commands');
 const { handleButton } = require('./components/playerControls');
 const { handleGuessButton } = require('./components/guessButtons');
 const { handleSoundButton } = require('./components/soundboard');
+const { handleVoiceReportButton } = require('./components/voiceReportButtons');
 const storage = require('./storage');
 const { setupVoiceTracker } = require('./voiceTracker');
 const { handleVoiceReportDm } = require('./commands/voicerapport');
@@ -55,6 +56,7 @@ const BUTTON_HANDLERS = [
   { prefix: 'player:', handler: handleButton, label: 'player' },
   { prefix: 'guess:', handler: handleGuessButton, label: 'guess' },
   { prefix: 'sound:', handler: handleSoundButton, label: 'sound' },
+  { prefix: 'voicerpt:', handler: handleVoiceReportButton, label: 'voicerapport' },
 ];
 
 client.on(Events.InteractionCreate, async (interaction) => {

@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Viser også **Ugens par** (top-duoer). Tone: `venlig`, `roast`, `sarkastisk`, `hyggelig`, `dramatisk`. Morgen-review kl. 06:00 med dagen før + ugens par. Tracking kræver **ikke** VC-join.
+- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Viser også **Ugens par** (top-duoer). Tone: `venlig`, `roast`, `sarkastisk`, `hyggelig`, `dramatisk` — kan skiftes med knapper på DM’en. Morgen-review kl. 06:00 med dagen før + ugens par. Tracking kræver **ikke** VC-join.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -178,7 +178,8 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
     ├── components/
     │   ├── playerControls.js   # Knapper på "Spiller nu"-embeds
     │   ├── guessButtons.js     # Knapper og handler for /guess
-    │   └── soundboard.js       # Knapper og handler for /soundboard
+    │   ├── soundboard.js       # Knapper og handler for /soundboard
+    │   └── voiceReportButtons.js # Tone-knapper på voice-rapport DM
     └── commands/               # En fil pr. slash command
         ├── play.js, skip.js, stop.js, queue.js, pause.js, resume.js
         ├── volume.js, loop.js, shuffle.js, clear.js, remove.js

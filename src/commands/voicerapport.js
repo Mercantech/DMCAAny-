@@ -449,10 +449,9 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null, options =
 }
 
 /**
- * Bygger og sender voice-rapport som DM til rapport-brugeren.
- * Data hentes altid fra VOICE_TRACK_GUILD_ID.
+ * Bygger voice-rapport embeds (+ metadata) uden at sende.
  */
-async function sendVoiceReport(
+async function buildVoiceReportPayload(
   client,
   {
     days = 7,
@@ -492,14 +491,11 @@ async function sendVoiceReport(
 
   const resolvedPeriod =
     periodLabel ||
-    (typeof untilMs === 'number'
-      ? formatDateShort(rangeSince)
-      : `seneste ${days} dage`);
+    (typeof untilMs === 'number' ? formatDateShort(rangeSince) : `seneste ${days} dage`);
 
   const isDayReport = typeof untilMs === 'number';
-  const duoLabel = isDayReport ? 'Dagens duo' : days <= 1 ? 'Dagens duo' : 'Ugens par';
+  const duoLabel = isDayReport || days <= 1 ? 'Dagens duo' : 'Ugens par';
 
-  // Til dagsrapporter: også beregn ugens par (seneste 7 dage)
   let weekDuoSessions = null;
   if (isDayReport) {
     const weekSince = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -532,21 +528,68 @@ async function sendVoiceReport(
     funFact = await generateVoiceFunFact(summary, toneKey);
   }
 
+  const resolvedTitle = title || `${emoji} Voice-rapport`;
+  const resolvedDescription =
+    description || 'Hvem sad **sammen** i samme rum — tider er slået sammen.';
+
   const embeds = buildReportEmbeds(sessions, isDayReport ? 1 : days, filterNote, funFact, {
-    title: title || `${emoji} Voice-rapport`,
-    description: description || 'Hvem sad **sammen** i samme rum — tider er slået sammen.',
+    title: resolvedTitle,
+    description: resolvedDescription,
     periodLabel: resolvedPeriod,
     duoLabel,
     weekDuoSessions,
     weekDuoLabel: 'Ugens par',
   });
 
+  return {
+    embeds,
+    sessions,
+    funFact,
+    tone: toneKey,
+    context: {
+      days,
+      userId,
+      channelId,
+      channelName,
+      sinceMs: typeof sinceMs === 'number' ? sinceMs : null,
+      untilMs: typeof untilMs === 'number' ? untilMs : null,
+      title: resolvedTitle,
+      description: resolvedDescription,
+      periodLabel: resolvedPeriod,
+    },
+  };
+}
+
+/**
+ * Bygger og sender voice-rapport som DM til rapport-brugeren.
+ * Data hentes altid fra VOICE_TRACK_GUILD_ID.
+ */
+async function sendVoiceReport(client, options = {}) {
+  const { buildToneButtons, saveReportContext } = require('../components/voiceReportButtons');
+
+  const payload = await buildVoiceReportPayload(client, options);
+  const contextId = saveReportContext(payload.context);
+  const components = buildToneButtons(payload.tone, contextId);
+
   const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
-  for (let i = 0; i < embeds.length; i += 10) {
-    await recipient.send({ embeds: embeds.slice(i, i + 10) });
+  const embedChunks = [];
+  for (let i = 0; i < payload.embeds.length; i += 10) {
+    embedChunks.push(payload.embeds.slice(i, i + 10));
   }
 
-  return { sessions, recipient, funFact, tone: toneKey };
+  for (let i = 0; i < embedChunks.length; i++) {
+    const msgPayload = { embeds: embedChunks[i] };
+    // Knapper kun på første besked
+    if (i === 0) msgPayload.components = components;
+    await recipient.send(msgPayload);
+  }
+
+  return {
+    sessions: payload.sessions,
+    recipient,
+    funFact: payload.funFact,
+    tone: payload.tone,
+  };
 }
 
 async function handleVoiceReportDm(message) {
@@ -583,6 +626,7 @@ module.exports = {
   VOICE_REPORT_USER_ID,
   VOICE_TRACK_GUILD_ID,
   sendVoiceReport,
+  buildVoiceReportPayload,
   handleVoiceReportDm,
   buildCoPresenceSegments,
   buildReportEmbeds,
