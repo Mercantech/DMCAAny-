@@ -10,11 +10,12 @@ const { getVoiceSessions } = require('../storage');
 const { isAdmin } = require('../permissions');
 const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig');
 
-const LINES_PER_EMBED = 25;
 const MAX_EMBEDS = 10;
+const FIELD_VALUE_MAX = 1000;
+const MIN_SEGMENT_MS = 60 * 1000;
 const DM_TRIGGERS = /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?$/i;
 
-function formatTime(ts) {
+function formatClock(ts) {
   return new Date(ts).toLocaleString('da-DK', {
     day: '2-digit',
     month: '2-digit',
@@ -39,51 +40,190 @@ function canRun(interaction) {
   return interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false;
 }
 
-function buildLines(sessions) {
-  const now = Date.now();
-  return sessions.map((s) => {
+/** Sweep-line: find tidsrum hvor det samme sæt brugere var i kanalen. */
+function buildCoPresenceSegments(channelSessions, now) {
+  const events = [];
+  for (const s of channelSessions) {
+    const start = s.joinedAt;
     const end = s.leftAt ?? now;
-    const duration = formatDuration(end - s.joinedAt);
-    const timeRange = s.leftAt
-      ? `${formatTime(s.joinedAt)}–${formatTime(s.leftAt)}`
-      : `${formatTime(s.joinedAt)}–nu (stadig i kanal)`;
-    const channel = s.channelName ? `#${s.channelName}` : `<#${s.channelId}>`;
-    return `<@${s.userId}> · ${channel} · ${timeRange} (${duration})`;
-  });
+    if (end <= start) continue;
+    events.push({ t: start, d: 1, userId: s.userId });
+    events.push({ t: end, d: -1, userId: s.userId });
+  }
+  // Ends før starts ved samme tidspunkt
+  events.sort((a, b) => a.t - b.t || a.d - b.d);
+
+  const present = new Map();
+  const segments = [];
+  let lastT = null;
+
+  for (const ev of events) {
+    if (lastT !== null && ev.t > lastT && present.size > 0) {
+      segments.push({
+        start: lastT,
+        end: ev.t,
+        userIds: [...present.keys()].sort(),
+      });
+    }
+    if (ev.d === 1) {
+      present.set(ev.userId, (present.get(ev.userId) || 0) + 1);
+    } else {
+      const next = (present.get(ev.userId) || 1) - 1;
+      if (next <= 0) present.delete(ev.userId);
+      else present.set(ev.userId, next);
+    }
+    lastT = ev.t;
+  }
+
+  const merged = [];
+  for (const seg of segments) {
+    const key = seg.userIds.join(',');
+    const prev = merged[merged.length - 1];
+    if (prev && prev.userIds.join(',') === key && prev.end === seg.start) {
+      prev.end = seg.end;
+    } else {
+      merged.push({ start: seg.start, end: seg.end, userIds: [...seg.userIds] });
+    }
+  }
+  return merged;
 }
 
-function buildEmbeds(lines, days, filterNote) {
-  const emoji = getBotEmoji();
+function groupSessionsByChannel(sessions) {
+  const map = new Map();
+  for (const s of sessions) {
+    if (!map.has(s.channelId)) {
+      map.set(s.channelId, {
+        channelId: s.channelId,
+        channelName: s.channelName || s.channelId,
+        sessions: [],
+      });
+    }
+    const g = map.get(s.channelId);
+    if (s.channelName) g.channelName = s.channelName;
+    g.sessions.push(s);
+  }
+  return [...map.values()].sort((a, b) => a.channelName.localeCompare(b.channelName, 'da'));
+}
+
+function mentionList(userIds) {
+  return userIds.map((id) => `<@${id}>`).join(' · ');
+}
+
+function formatChannelBody(channelGroup, now) {
+  const segments = buildCoPresenceSegments(channelGroup.sessions, now).filter(
+    (seg) => seg.end - seg.start >= MIN_SEGMENT_MS,
+  );
+
+  const together = segments.filter((s) => s.userIds.length >= 2);
+  const solo = segments.filter((s) => s.userIds.length === 1);
+
+  const openNow = new Set(
+    channelGroup.sessions.filter((s) => s.leftAt === null).map((s) => s.userId),
+  );
+
+  const lines = [];
+
+  if (together.length > 0) {
+    lines.push('**Sammen**');
+    for (const seg of together) {
+      lines.push(
+        `\`${formatClock(seg.start)}–${formatClock(seg.end)}\` (${formatDuration(seg.end - seg.start)})`,
+      );
+      lines.push(`→ ${mentionList(seg.userIds)}`);
+    }
+  }
+
+  if (solo.length > 0) {
+    if (lines.length) lines.push('');
+    lines.push('**Alene**');
+    for (const seg of solo) {
+      lines.push(
+        `\`${formatClock(seg.start)}–${formatClock(seg.end)}\` · ${mentionList(seg.userIds)} (${formatDuration(seg.end - seg.start)})`,
+      );
+    }
+  }
+
+  if (openNow.size > 0) {
+    if (lines.length) lines.push('');
+    lines.push(`**Nu:** ${mentionList([...openNow].sort())}`);
+  }
+
   if (lines.length === 0) {
+    return '_Ingen segmenter over 1 minut._';
+  }
+
+  return lines.join('\n');
+}
+
+function chunkFieldValue(text) {
+  if (text.length <= FIELD_VALUE_MAX) return [text];
+  const chunks = [];
+  const parts = text.split('\n');
+  let current = '';
+  for (const part of parts) {
+    const next = current ? `${current}\n${part}` : part;
+    if (next.length > FIELD_VALUE_MAX && current) {
+      chunks.push(current);
+      current = part;
+    } else {
+      current = next;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function buildReportEmbeds(sessions, days, filterNote) {
+  const emoji = getBotEmoji();
+  const now = Date.now();
+
+  if (sessions.length === 0) {
     return [
       new EmbedBuilder()
         .setTitle(`${emoji} Voice-rapport`)
-        .setDescription(`Ingen voice-aktivitet i de seneste ${days} dag(e).${filterNote}`)
+        .setDescription(`Ingen voice-aktivitet i de seneste ${days} dag(e).${filterNote ? `\n${filterNote}` : ''}`)
         .setTimestamp(),
     ];
   }
 
-  const maxLines = LINES_PER_EMBED * MAX_EMBEDS;
-  const shown = lines.slice(0, maxLines);
+  const channels = groupSessionsByChannel(sessions);
+  let togetherCount = 0;
+  for (const ch of channels) {
+    togetherCount += buildCoPresenceSegments(ch.sessions, now).filter(
+      (s) => s.userIds.length >= 2 && s.end - s.start >= MIN_SEGMENT_MS,
+    ).length;
+  }
+
+  const footer = `${togetherCount} samvær · ${channels.length} kanal(er) · seneste ${days} dage`;
+  const fields = [];
+
+  for (const ch of channels) {
+    const body = formatChannelBody(ch, now);
+    const chunks = chunkFieldValue(body);
+    const baseName = `#${ch.channelName}`.slice(0, 250);
+    for (let i = 0; i < chunks.length; i++) {
+      fields.push({
+        name: i === 0 ? baseName : `${baseName} (fortsat)`.slice(0, 256),
+        value: chunks[i],
+      });
+    }
+  }
+
   const embeds = [];
+  const FIELDS_PER_EMBED = 25;
 
-  for (let i = 0; i < shown.length; i += LINES_PER_EMBED) {
-    const chunk = shown.slice(i, i + LINES_PER_EMBED);
-    const page = Math.floor(i / LINES_PER_EMBED) + 1;
-    const totalPages = Math.ceil(shown.length / LINES_PER_EMBED);
+  for (let i = 0; i < fields.length && embeds.length < MAX_EMBEDS; i += FIELDS_PER_EMBED) {
+    const chunk = fields.slice(i, i + FIELDS_PER_EMBED);
     const embed = new EmbedBuilder()
-      .setTitle(page === 1 ? `${emoji} Voice-rapport` : `${emoji} Voice-rapport (${page}/${totalPages})`)
-      .setDescription(chunk.join('\n'))
-      .setFooter({
-        text:
-          lines.length > maxLines
-            ? `Viser ${shown.length} af ${lines.length} sessioner · seneste ${days} dage`
-            : `${lines.length} sessioner · seneste ${days} dage`,
-      })
-      .setTimestamp();
+      .setTitle(i === 0 ? `${emoji} Voice-rapport` : `${emoji} Voice-rapport (fortsat)`)
+      .setTimestamp()
+      .setFooter({ text: footer })
+      .addFields(chunk);
 
-    if (page === 1 && filterNote) {
-      embed.setDescription(`${filterNote.trim()}\n\n${chunk.join('\n')}`);
+    if (i === 0) {
+      embed.setDescription(
+        [filterNote || null, 'Hvem sad **sammen** i samme rum — tider er slået sammen.'].filter(Boolean).join('\n'),
+      );
     }
 
     embeds.push(embed);
@@ -109,10 +249,9 @@ async function sendVoiceReport(client, { days = 7, userId = null, channelId = nu
   if (channelName || channelId) {
     filterParts.push(`Kanal: #${channelName ?? channelId}`);
   }
-  const filterNote = filterParts.length ? `\n${filterParts.join(' · ')}` : '';
+  const filterNote = filterParts.length ? filterParts.join(' · ') : '';
 
-  const lines = buildLines(sessions);
-  const embeds = buildEmbeds(lines, days, filterNote);
+  const embeds = buildReportEmbeds(sessions, days, filterNote);
 
   const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
   for (let i = 0; i < embeds.length; i += 10) {
@@ -127,9 +266,6 @@ async function handleVoiceReportDm(message) {
   if (message.author.id !== VOICE_REPORT_USER_ID) return false;
   if (message.guild) return false;
 
-  // Uden Message Content Intent er content ofte tomt – enhver DM fra
-  // rapport-brugeren triggere derfor en standardrapport (7 dage).
-  // Hvis content findes, accepteres også "rapport" / "rapport 14".
   const text = message.content?.trim() ?? '';
   let days = 7;
   if (text.length > 0) {
@@ -156,6 +292,8 @@ module.exports = {
   VOICE_TRACK_GUILD_ID,
   sendVoiceReport,
   handleVoiceReportDm,
+  buildCoPresenceSegments,
+  buildReportEmbeds,
 
   data: new SlashCommandBuilder()
     .setName('voicerapport')
