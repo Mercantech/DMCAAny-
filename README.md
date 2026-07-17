@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til rapport-brugeren (Manage Guild eller rapport-brugeren). Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten (enhver besked → 7 dages rapport). Med `OPENAI_API_KEY` tilføjes en AI-fun fact. Tracking kræver **ikke** at botten joiner voice channels.
+- `/voicerapport [bruger] [kanal] [dage] [tone]` – send voice-rapport som DM. Tone til AI-fun fact: `venlig` (default), `roast`, `sarkastisk`, `hyggelig`, `dramatisk`. Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten. Med `OPENAI_API_KEY` tilføjes fun fact. Tracking kræver **ikke** VC-join.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt

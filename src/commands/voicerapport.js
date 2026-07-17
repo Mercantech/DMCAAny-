@@ -9,12 +9,13 @@ const { getBotEmoji, withEmoji } = require('../emoji');
 const { getVoiceSessions } = require('../storage');
 const { isAdmin } = require('../permissions');
 const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig');
-const { generateVoiceFunFact } = require('../openaiFunFact');
+const { generateVoiceFunFact, normalizeTone } = require('../openaiFunFact');
 
 const MAX_EMBEDS = 10;
 const FIELD_VALUE_MAX = 1000;
 const MIN_SEGMENT_MS = 60 * 1000;
-const DM_TRIGGERS = /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?$/i;
+const DM_TRIGGERS =
+  /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?(?:\s+(venlig|roast|sarkastisk|hyggelig|dramatisk))?$/i;
 
 function formatDate(ts) {
   return new Date(ts).toLocaleString('da-DK', {
@@ -264,10 +265,10 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
   const footer = `${togetherCount} samvær · ${channels.length} kanal(er) · seneste ${days} dage`;
   const fields = [];
 
-  if (funFact) {
+  if (funFact?.text) {
     fields.push({
-      name: 'Fun fact',
-      value: funFact.slice(0, FIELD_VALUE_MAX),
+      name: funFact.label || 'Fun fact',
+      value: funFact.text.slice(0, FIELD_VALUE_MAX),
     });
   }
 
@@ -310,7 +311,10 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
  * Bygger og sender voice-rapport som DM til rapport-brugeren.
  * Data hentes altid fra VOICE_TRACK_GUILD_ID.
  */
-async function sendVoiceReport(client, { days = 7, userId = null, channelId = null, channelName = null } = {}) {
+async function sendVoiceReport(
+  client,
+  { days = 7, userId = null, channelId = null, channelName = null, tone = 'venlig' } = {},
+) {
   const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
   const sessions = getVoiceSessions(VOICE_TRACK_GUILD_ID, {
     userId: userId ?? undefined,
@@ -325,12 +329,13 @@ async function sendVoiceReport(client, { days = 7, userId = null, channelId = nu
   }
   const filterNote = filterParts.length ? filterParts.join(' · ') : '';
 
+  const toneKey = normalizeTone(tone);
   let funFact = null;
   if (sessions.length > 0) {
     const uniqueIds = [...new Set(sessions.map((s) => s.userId))];
     const nameOf = await resolveDisplayNames(client, uniqueIds);
     const summary = buildAiSummary(sessions, days, nameOf);
-    funFact = await generateVoiceFunFact(summary);
+    funFact = await generateVoiceFunFact(summary, toneKey);
   }
 
   const embeds = buildReportEmbeds(sessions, days, filterNote, funFact);
@@ -340,7 +345,7 @@ async function sendVoiceReport(client, { days = 7, userId = null, channelId = nu
     await recipient.send({ embeds: embeds.slice(i, i + 10) });
   }
 
-  return { sessions, recipient, funFact };
+  return { sessions, recipient, funFact, tone: toneKey };
 }
 
 async function handleVoiceReportDm(message) {
@@ -350,18 +355,22 @@ async function handleVoiceReportDm(message) {
 
   const text = message.content?.trim() ?? '';
   let days = 7;
+  let tone = 'venlig';
   if (text.length > 0) {
     const match = text.match(DM_TRIGGERS);
     if (!match) return false;
     if (match[1]) days = Number.parseInt(match[1], 10);
+    if (match[2]) tone = match[2].toLowerCase();
   }
 
   if (!Number.isFinite(days) || days < 1) days = 7;
   if (days > 90) days = 90;
 
   try {
-    const { sessions } = await sendVoiceReport(message.client, { days });
-    await message.reply(withEmoji(`Voice-rapport sendt (${sessions.length} sessioner, ${days} dage).`));
+    const { sessions, tone: usedTone } = await sendVoiceReport(message.client, { days, tone });
+    await message.reply(
+      withEmoji(`Voice-rapport sendt (${sessions.length} sessioner, ${days} dage, tone: ${usedTone}).`),
+    );
   } catch (error) {
     console.error('[voicerapport] DM-rapport fejlede:', error);
     await message.reply(withEmoji('Kunne ikke sende rapporten. Prøv igen om lidt.')).catch(() => {});
@@ -397,6 +406,19 @@ module.exports = {
         .setMinValue(1)
         .setMaxValue(90)
         .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('tone')
+        .setDescription('Tone på AI-fun fact (default: venlig)')
+        .setRequired(false)
+        .addChoices(
+          { name: 'Venlig', value: 'venlig' },
+          { name: 'Roast', value: 'roast' },
+          { name: 'Sarkastisk', value: 'sarkastisk' },
+          { name: 'Hyggelig', value: 'hyggelig' },
+          { name: 'Dramatisk', value: 'dramatisk' },
+        ),
     ),
 
   async execute(interaction) {
@@ -410,18 +432,22 @@ module.exports = {
     const days = interaction.options.getInteger('dage') ?? 7;
     const user = interaction.options.getUser('bruger');
     const channel = interaction.options.getChannel('kanal');
+    const tone = interaction.options.getString('tone') ?? 'venlig';
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
-      const { sessions } = await sendVoiceReport(interaction.client, {
+      const { sessions, tone: usedTone } = await sendVoiceReport(interaction.client, {
         days,
         userId: user?.id ?? null,
         channelId: channel?.id ?? null,
         channelName: channel?.name ?? null,
+        tone,
       });
       return interaction.editReply(
-        withEmoji(`Voice-rapport sendt som DM til <@${VOICE_REPORT_USER_ID}> (${sessions.length} sessioner).`),
+        withEmoji(
+          `Voice-rapport sendt som DM til <@${VOICE_REPORT_USER_ID}> (${sessions.length} sessioner, tone: ${usedTone}).`,
+        ),
       );
     } catch (error) {
       console.error('[voicerapport] Kunne ikke sende DM:', error);
