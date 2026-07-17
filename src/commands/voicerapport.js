@@ -9,6 +9,7 @@ const { getBotEmoji, withEmoji } = require('../emoji');
 const { getVoiceSessions } = require('../storage');
 const { isAdmin } = require('../permissions');
 const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig');
+const { generateVoiceFunFact } = require('../openaiFunFact');
 
 const MAX_EMBEDS = 10;
 const FIELD_VALUE_MAX = 1000;
@@ -172,6 +173,55 @@ function formatChannelBody(channelGroup, now) {
   return lines.join('\n');
 }
 
+/** Plain-text overblik til OpenAI (display-navne, ikke Discord-mentions). */
+function buildAiSummary(sessions, days, nameOf) {
+  const now = Date.now();
+  const channels = groupSessionsByChannel(sessions);
+  const lines = [`Periode: seneste ${days} dage`, ''];
+
+  for (const ch of channels) {
+    lines.push(`Kanal: #${ch.channelName}`);
+    const segments = buildCoPresenceSegments(ch.sessions, now).filter(
+      (seg) => seg.end - seg.start >= MIN_SEGMENT_MS,
+    );
+    for (const seg of segments) {
+      const people = seg.userIds.map((id) => nameOf(id)).join(', ');
+      const label = seg.userIds.length >= 2 ? 'Sammen' : 'Alene';
+      lines.push(
+        `- ${label}: ${formatRange(seg.start, seg.end)} (${formatDuration(seg.end - seg.start)}) — ${people}`,
+      );
+    }
+    const openNow = ch.sessions.filter((s) => s.leftAt === null).map((s) => nameOf(s.userId));
+    if (openNow.length) lines.push(`- Nu: ${[...new Set(openNow)].join(', ')}`);
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
+async function resolveDisplayNames(client, userIds) {
+  const map = new Map();
+  const guild = client.guilds.cache.get(VOICE_TRACK_GUILD_ID);
+  for (const userId of userIds) {
+    let name = `bruger-${userId.slice(-4)}`;
+    try {
+      let member = guild?.members.cache.get(userId);
+      if (!member && guild) {
+        member = await guild.members.fetch(userId).catch(() => null);
+      }
+      if (member) name = member.displayName || member.user?.username || name;
+      else {
+        const user = await client.users.fetch(userId).catch(() => null);
+        if (user) name = user.username;
+      }
+    } catch {
+      // keep fallback
+    }
+    map.set(userId, name);
+  }
+  return (userId) => map.get(userId) || `bruger-${String(userId).slice(-4)}`;
+}
+
 function chunkFieldValue(text) {
   if (text.length <= FIELD_VALUE_MAX) return [text];
   const chunks = [];
@@ -190,7 +240,7 @@ function chunkFieldValue(text) {
   return chunks;
 }
 
-function buildReportEmbeds(sessions, days, filterNote) {
+function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
   const emoji = getBotEmoji();
   const now = Date.now();
 
@@ -213,6 +263,13 @@ function buildReportEmbeds(sessions, days, filterNote) {
 
   const footer = `${togetherCount} samvær · ${channels.length} kanal(er) · seneste ${days} dage`;
   const fields = [];
+
+  if (funFact) {
+    fields.push({
+      name: 'Fun fact',
+      value: funFact.slice(0, FIELD_VALUE_MAX),
+    });
+  }
 
   for (const ch of channels) {
     const body = formatChannelBody(ch, now);
@@ -268,14 +325,22 @@ async function sendVoiceReport(client, { days = 7, userId = null, channelId = nu
   }
   const filterNote = filterParts.length ? filterParts.join(' · ') : '';
 
-  const embeds = buildReportEmbeds(sessions, days, filterNote);
+  let funFact = null;
+  if (sessions.length > 0) {
+    const uniqueIds = [...new Set(sessions.map((s) => s.userId))];
+    const nameOf = await resolveDisplayNames(client, uniqueIds);
+    const summary = buildAiSummary(sessions, days, nameOf);
+    funFact = await generateVoiceFunFact(summary);
+  }
+
+  const embeds = buildReportEmbeds(sessions, days, filterNote, funFact);
 
   const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
   for (let i = 0; i < embeds.length; i += 10) {
     await recipient.send({ embeds: embeds.slice(i, i + 10) });
   }
 
-  return { sessions, recipient };
+  return { sessions, recipient, funFact };
 }
 
 async function handleVoiceReportDm(message) {

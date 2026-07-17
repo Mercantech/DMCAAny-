@@ -41,7 +41,7 @@ En simpel Discord musik-bot der kan afspille sange fra **YouTube** og **SoundClo
 
 **Admin:**
 - `/dj set/remove/show <rolle>` – sæt DJ-rolle (kun rolle + admins kan så bruge skip/stop/clear/remove)
-- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til rapport-brugeren (Manage Guild eller rapport-brugeren). Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten (enhver besked → 7 dages rapport). Tracking kræver **ikke** at botten joiner voice channels.
+- `/voicerapport [bruger] [kanal] [dage]` – send voice join/leave-rapport som DM til rapport-brugeren (Manage Guild eller rapport-brugeren). Data hentes altid fra den faste server. Rapport-brugeren kan også DM'e botten (enhver besked → 7 dages rapport). Med `OPENAI_API_KEY` tilføjes en AI-fun fact. Tracking kræver **ikke** at botten joiner voice channels.
 
 **Diverse:**
 - `/help` – komplet kommando-oversigt
@@ -162,6 +162,7 @@ I `docker-compose.yml` mountes en navngivet volume `bot-data` til `/app/data`, s
     ├── player.js               # discord-player + extractors + history
     ├── voiceTracker.js         # Voice join/leave logging (uden VC-join)
     ├── voiceConfig.js          # Fast guild-/rapport-bruger-id
+    ├── openaiFunFact.js        # OpenAI fun fact til voice-rapport
     ├── deploy-commands.js      # Slash command registrering
     ├── emoji.js                # Custom emoji helper
     ├── permissions.js          # isDJ() / isAdmin() helpers
