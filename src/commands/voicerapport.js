@@ -200,6 +200,14 @@ function buildAiSummary(sessions, days, nameOf) {
     lines.push('');
   }
 
+  const totals = buildUserTotals(sessions, now);
+  if (totals.length) {
+    lines.push('Samlet tid pr. person (alene i parentes):');
+    for (const [userId, { totalMs, aloneMs }] of totals) {
+      lines.push(`- ${nameOf(userId)}: ${formatDuration(totalMs)} (${formatDuration(aloneMs)} alene)`);
+    }
+  }
+
   return lines.join('\n').trim();
 }
 
@@ -244,6 +252,39 @@ function chunkFieldValue(text) {
   return chunks;
 }
 
+/** Samlet VC-tid pr. bruger + alenetid (fra co-presence-segmenter). */
+function buildUserTotals(sessions, now) {
+  const totals = new Map();
+  for (const ch of groupSessionsByChannel(sessions)) {
+    const segments = buildCoPresenceSegments(ch.sessions, now).filter(
+      (seg) => seg.end - seg.start >= MIN_SEGMENT_MS,
+    );
+    for (const seg of segments) {
+      const dur = seg.end - seg.start;
+      const alone = seg.userIds.length === 1;
+      for (const uid of seg.userIds) {
+        if (!totals.has(uid)) totals.set(uid, { totalMs: 0, aloneMs: 0 });
+        const row = totals.get(uid);
+        row.totalMs += dur;
+        if (alone) row.aloneMs += dur;
+      }
+    }
+  }
+  return [...totals.entries()].sort((a, b) => b[1].totalMs - a[1].totalMs);
+}
+
+function formatTotalsTable(sessions, now) {
+  const rows = buildUserTotals(sessions, now);
+  if (rows.length === 0) return null;
+
+  const lines = rows.map(([userId, { totalMs, aloneMs }]) => {
+    return `<@${userId}> · **${formatDuration(totalMs)}** (${formatDuration(aloneMs)} alene)`;
+  });
+
+  // Simpel "tabel"-header
+  return [`Bruger · samlet (alene)`, ...lines].join('\n');
+}
+
 function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
   const emoji = getBotEmoji();
   const now = Date.now();
@@ -283,6 +324,16 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null) {
       fields.push({
         name: i === 0 ? baseName : `${baseName} (fortsat)`.slice(0, 256),
         value: chunks[i],
+      });
+    }
+  }
+
+  const totalsBody = formatTotalsTable(sessions, now);
+  if (totalsBody) {
+    for (const chunk of chunkFieldValue(totalsBody)) {
+      fields.push({
+        name: fields.some((f) => f.name.startsWith('Samlet tid')) ? 'Samlet tid (fortsat)' : 'Samlet tid',
+        value: chunk,
       });
     }
   }
