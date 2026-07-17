@@ -14,11 +14,13 @@ const { generateVoiceFunFact, normalizeTone } = require('../openaiFunFact');
 const MAX_EMBEDS = 10;
 const FIELD_VALUE_MAX = 1000;
 const MIN_SEGMENT_MS = 60 * 1000;
+const REPORT_TIMEZONE = 'Europe/Copenhagen';
 const DM_TRIGGERS =
   /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?(?:\s+(venlig|roast|sarkastisk|hyggelig|dramatisk))?$/i;
 
 function formatDate(ts) {
   return new Date(ts).toLocaleString('da-DK', {
+    timeZone: REPORT_TIMEZONE,
     day: '2-digit',
     month: '2-digit',
   });
@@ -26,6 +28,7 @@ function formatDate(ts) {
 
 function formatTimeOfDay(ts) {
   return new Date(ts).toLocaleString('da-DK', {
+    timeZone: REPORT_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
   });
