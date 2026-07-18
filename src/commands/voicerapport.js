@@ -326,11 +326,9 @@ function formatTotalsTable(sessions, now) {
   if (rows.length === 0) return null;
 
   const lines = rows.map(([userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }]) => {
-    const withOthersMs = Math.max(0, totalMs - aloneMs);
     const parts = [
       `<@${userId}> · **${formatDuration(totalMs)}** total`,
       `${formatDuration(aloneMs)} alene`,
-      `${formatDuration(withOthersMs)} med andre`,
     ];
     if (mutedMs >= MIN_SEGMENT_MS) parts.push(`mute ${formatDuration(mutedMs)}`);
     if (deafMs >= MIN_SEGMENT_MS) parts.push(`deaf ${formatDuration(deafMs)}`);
@@ -339,7 +337,7 @@ function formatTotalsTable(sessions, now) {
     return parts.join(' · ');
   });
 
-  return [`Bruger · total · alene · med andre`, ...lines].join('\n');
+  return [`Bruger · total · alene`, ...lines].join('\n');
 }
 
 /** Tid sammen pr. duo (alle par i multi-person segmenter). */
