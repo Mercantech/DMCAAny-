@@ -182,7 +182,39 @@ function formatChannelBody(channelGroup, now) {
 function buildAiSummary(sessions, days, nameOf) {
   const now = Date.now();
   const channels = groupSessionsByChannel(sessions);
-  const lines = [`Periode: seneste ${days} dage`, ''];
+  const lines = [
+    `Periode: seneste ${days} dage`,
+    '',
+    'NØGLETAL (læs først — bland IKKE TOTAL og ALENE):',
+    'TOTAL = al tid i voice. ALENE = kun uden andre. MED_ANDRE = TOTAL minus ALENE.',
+  ];
+
+  const totals = buildUserTotals(sessions, now);
+  if (totals.length) {
+    for (const [userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }] of totals) {
+      const withOthersMs = Math.max(0, totalMs - aloneMs);
+      const name = nameOf(userId);
+      lines.push(
+        `- ${name}: TOTAL ${formatDuration(totalMs)} | ALENE ${formatDuration(aloneMs)} | MED_ANDRE ${formatDuration(withOthersMs)}` +
+          ` | mute ${formatDuration(mutedMs || 0)} | deaf ${formatDuration(deafMs || 0)}` +
+          ` | live ${formatDuration(liveMs || 0)} | cam ${formatDuration(camMs || 0)}`,
+      );
+    }
+  } else {
+    lines.push('- (ingen nøgletal)');
+  }
+
+  const pairs = buildPairTotals(sessions, now).slice(0, 3);
+  if (pairs.length) {
+    lines.push('');
+    lines.push('Top-duoer (tid de TO sad sammen — ikke det samme som MED_ANDRE):');
+    for (const row of pairs) {
+      lines.push(`- ${nameOf(row.a)} + ${nameOf(row.b)}: ${formatDuration(row.ms)}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('Segmenter (detaljer):');
 
   for (const ch of channels) {
     lines.push(`Kanal: #${ch.channelName}`);
@@ -199,25 +231,6 @@ function buildAiSummary(sessions, days, nameOf) {
     const openNow = ch.sessions.filter((s) => s.leftAt === null).map((s) => nameOf(s.userId));
     if (openNow.length) lines.push(`- Nu: ${[...new Set(openNow)].join(', ')}`);
     lines.push('');
-  }
-
-  const totals = buildUserTotals(sessions, now);
-  if (totals.length) {
-    lines.push('Samlet tid pr. person (alene / mute / deaf / live / cam):');
-    for (const [userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }] of totals) {
-      lines.push(
-        `- ${nameOf(userId)}: ${formatDuration(totalMs)} (alene ${formatDuration(aloneMs)}, mute ${formatDuration(mutedMs || 0)}, deaf ${formatDuration(deafMs || 0)}, live ${formatDuration(liveMs || 0)}, cam ${formatDuration(camMs || 0)})`,
-      );
-    }
-  }
-
-  const pairs = buildPairTotals(sessions, now).slice(0, 3);
-  if (pairs.length) {
-    lines.push('');
-    lines.push('Top-duoer (tid sammen):');
-    for (const row of pairs) {
-      lines.push(`- ${nameOf(row.a)} + ${nameOf(row.b)}: ${formatDuration(row.ms)}`);
-    }
   }
 
   return lines.join('\n').trim();
@@ -313,8 +326,11 @@ function formatTotalsTable(sessions, now) {
   if (rows.length === 0) return null;
 
   const lines = rows.map(([userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }]) => {
+    const withOthersMs = Math.max(0, totalMs - aloneMs);
     const parts = [
-      `<@${userId}> · **${formatDuration(totalMs)}** (${formatDuration(aloneMs)} alene)`,
+      `<@${userId}> · **${formatDuration(totalMs)}** total`,
+      `${formatDuration(aloneMs)} alene`,
+      `${formatDuration(withOthersMs)} med andre`,
     ];
     if (mutedMs >= MIN_SEGMENT_MS) parts.push(`mute ${formatDuration(mutedMs)}`);
     if (deafMs >= MIN_SEGMENT_MS) parts.push(`deaf ${formatDuration(deafMs)}`);
@@ -323,7 +339,7 @@ function formatTotalsTable(sessions, now) {
     return parts.join(' · ');
   });
 
-  return [`Bruger · samlet (alene) · mute/deaf/live/cam`, ...lines].join('\n');
+  return [`Bruger · total · alene · med andre`, ...lines].join('\n');
 }
 
 /** Tid sammen pr. duo (alle par i multi-person segmenter). */

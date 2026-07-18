@@ -1,5 +1,16 @@
 const DEFAULT_MODEL = 'gpt-4o-mini';
 
+/** Fælles regel så modellen ikke blander total / alene / sammen. */
+const DATA_ACCURACY_RULES =
+  'VIGTIGT om tallene: ' +
+  'TOTAL = al tid i voice (alene + med andre). ' +
+  'ALENE = kun tid uden andre i samme kanal. ' +
+  'MED_ANDRE = tid med mindst én anden. ' +
+  'Sig ALDRIG at TOTAL er alenetid. ' +
+  'Hvis du nævner "alene", brug KUN ALENE-tallet. ' +
+  'Hvis du nævner "i voice"/"samlet", brug TOTAL. ' +
+  'Duo-tid er tid to specifikke personer sad sammen — ikke det samme som MED_ANDRE totalt. ';
+
 const TONES = {
   venlig: {
     label: 'Fun fact',
@@ -9,6 +20,7 @@ const TONES = {
       'Du er en venlig dansk kommentator for en Discord-server. ' +
       'Skriv PRÆCIS én kort fun fact (1–2 sætninger) om voice-aktiviteten. ' +
       'Vær sjov, observant og ufarlig — ingen drillerier der kan såre. ' +
+      DATA_ACCURACY_RULES +
       'Ingen overskrifter, bullets eller emoji-spam. Kun fakta baseret på dataene.',
   },
   roast: {
@@ -19,7 +31,9 @@ const TONES = {
       'Du er en dansk roast-komiker for en Discord-server blandt venner. ' +
       'Skriv PRÆCIS én kort roast (1–2 sætninger) om voice-aktiviteten. ' +
       'Vær skarp, sjov og drilsk — men hold dig til dataene, ingen personlige angreb på udseende/identitet, ' +
-      'ingen hadefuldt indhold. Ingen overskrifter, bullets eller emoji-spam.',
+      'ingen hadefuldt indhold. ' +
+      DATA_ACCURACY_RULES +
+      'Ingen overskrifter, bullets eller emoji-spam.',
   },
   mega: {
     label: 'Mega roast',
@@ -28,8 +42,9 @@ const TONES = {
     system:
       'Du er en MAXIMAL dansk roast-komiker til en Discord-server blandt gode venner. ' +
       'Skriv en MEGA roast (2–4 sætninger) om voice-aktiviteten: overdrevet, kreativ, nådesløst sjov. ' +
-      'Brug dataene hårdt (alonetid, duoer, tidspunkter, kanaler). ' +
+      'Brug dataene hårdt (ALENE vs MED_ANDRE, duoer, mute/live/cam). ' +
       'Stadig kun venner-imellem: ingen had, ingen angreb på udseende/identitet/privatliv, intet seksuelt. ' +
+      DATA_ACCURACY_RULES +
       'Ingen overskrifter, bullets eller emoji-spam.',
   },
   sarkastisk: {
@@ -39,7 +54,8 @@ const TONES = {
     system:
       'Du er en tør, sarkastisk dansk kommentator. ' +
       'Skriv PRÆCIS én kort bemærkning (1–2 sætninger) om voice-aktiviteten med understatement og ironi. ' +
-      'Hold dig til dataene. Ingen overskrifter, bullets eller emoji-spam.',
+      DATA_ACCURACY_RULES +
+      'Ingen overskrifter, bullets eller emoji-spam.',
   },
   hyggelig: {
     label: 'Hygge-fact',
@@ -48,7 +64,9 @@ const TONES = {
     system:
       'Du er en varm, hyggelig dansk kommentator. ' +
       'Skriv PRÆCIS én kort, positiv observation (1–2 sætninger) om voice-aktiviteten — ' +
-      'som en venlig værtsnote. Hold dig til dataene. Ingen overskrifter, bullets eller emoji-spam.',
+      'som en venlig værtsnote. ' +
+      DATA_ACCURACY_RULES +
+      'Ingen overskrifter, bullets eller emoji-spam.',
   },
   dramatisk: {
     label: 'Drama',
@@ -57,7 +75,9 @@ const TONES = {
     system:
       'Du er en overdramatisk sports-/dokumentar-kommentator på dansk. ' +
       'Skriv PRÆCIS én kort, episk linje (1–2 sætninger) om voice-aktiviteten. ' +
-      'Hold dig til dataene, men gør det teatralsk. Ingen overskrifter, bullets eller emoji-spam.',
+      'Hold dig til dataene, men gør det teatralsk. ' +
+      DATA_ACCURACY_RULES +
+      'Ingen overskrifter, bullets eller emoji-spam.',
   },
 };
 
@@ -97,7 +117,9 @@ async function generateVoiceFunFact(reportSummary, tone = 'venlig') {
           { role: 'system', content: toneCfg.system },
           {
             role: 'user',
-            content: `Voice-data:\n\n${reportSummary.slice(0, 6000)}\n\nSkriv din ${toneKey}-kommentar nu.`,
+            content:
+              `Voice-data:\n\n${reportSummary.slice(0, 6000)}\n\n` +
+              `Skriv din ${toneKey}-kommentar nu. Husk: TOTAL ≠ ALENE. Brug tallene præcist.`,
           },
         ],
       }),
