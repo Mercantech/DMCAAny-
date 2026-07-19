@@ -10,11 +10,12 @@ const { getVoiceSessions, clipSessionsToWindow } = require('../storage');
 const { isAdmin } = require('../permissions');
 const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig');
 const { generateVoiceFunFact, normalizeTone } = require('../openaiFunFact');
-const { formatDateShort } = require('../copenhagenTime');
+const { formatDateShort, dayKey, prevDayKey, forEachDayOverlap } = require('../copenhagenTime');
 
 const MAX_EMBEDS = 10;
 const FIELD_VALUE_MAX = 1000;
 const MIN_SEGMENT_MS = 4 * 60 * 1000;
+const STREAK_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 const REPORT_TIMEZONE = 'Europe/Copenhagen';
 const DM_TRIGGERS =
   /^(?:rapport|voicerapport)(?:\s+(\d{1,2}))?(?:\s+(venlig|roast|mega|megaroast|sarkastisk|hyggelig|dramatisk))?$/i;
@@ -321,9 +322,71 @@ function buildUserTotals(sessions, now) {
   return [...totals.entries()].sort((a, b) => b[1].totalMs - a[1].totalMs);
 }
 
+/**
+ * Nuværende VC-streak pr. bruger: sammenhængende kalenderdage (DK)
+ * med ≥ 4 min VC, der ender i dag eller i går.
+ */
+function buildUserStreaks(sessions, now = Date.now()) {
+  const byUser = new Map(); // userId -> Map<dayKey, ms>
+
+  for (const s of sessions) {
+    const start = s.joinedAt;
+    const end = s.leftAt ?? now;
+    if (end <= start) continue;
+    if (!byUser.has(s.userId)) byUser.set(s.userId, new Map());
+    const days = byUser.get(s.userId);
+    forEachDayOverlap(start, end, (key, ms) => {
+      days.set(key, (days.get(key) || 0) + ms);
+    });
+  }
+
+  const today = dayKey(now);
+  const yesterday = prevDayKey(today);
+  const streaks = new Map();
+
+  for (const [userId, dayMap] of byUser) {
+    const active = [...dayMap.entries()]
+      .filter(([, ms]) => ms >= MIN_SEGMENT_MS)
+      .map(([k]) => k)
+      .sort();
+
+    if (active.length === 0) {
+      streaks.set(userId, 0);
+      continue;
+    }
+
+    const last = active[active.length - 1];
+    // Streak skal være "levende": aktivitet i dag eller i går
+    if (last !== today && last !== yesterday) {
+      streaks.set(userId, 0);
+      continue;
+    }
+
+    let streak = 0;
+    let expect = last;
+    for (let i = active.length - 1; i >= 0; i--) {
+      if (active[i] === expect) {
+        streak += 1;
+        expect = prevDayKey(expect);
+      } else if (active[i] < expect) {
+        break;
+      }
+    }
+    streaks.set(userId, streak);
+  }
+
+  return streaks;
+}
+
 function formatTotalsTable(sessions, now) {
   const rows = buildUserTotals(sessions, now);
   if (rows.length === 0) return null;
+
+  // Streak fra op til 90 dages historik (ikke kun rapport-vinduet)
+  const streakSessions = getVoiceSessions(VOICE_TRACK_GUILD_ID, {
+    sinceMs: now - STREAK_LOOKBACK_MS,
+  });
+  const streaks = buildUserStreaks(streakSessions, now);
 
   const lines = rows.map(([userId, { totalMs, aloneMs, mutedMs, deafMs, liveMs, camMs }]) => {
     const parts = [
@@ -334,6 +397,8 @@ function formatTotalsTable(sessions, now) {
     if (deafMs >= MIN_SEGMENT_MS) parts.push(`deaf ${formatDuration(deafMs)}`);
     if (liveMs >= MIN_SEGMENT_MS) parts.push(`live ${formatDuration(liveMs)}`);
     if (camMs >= MIN_SEGMENT_MS) parts.push(`cam ${formatDuration(camMs)}`);
+    const streak = streaks.get(userId) || 0;
+    if (streak >= 1) parts.push(`streak ${streak}d`);
     return parts.join(' · ');
   });
 

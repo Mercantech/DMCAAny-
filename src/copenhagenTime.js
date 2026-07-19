@@ -77,6 +77,42 @@ function msUntilNextLocalTime(hour, minute = 0, now = Date.now(), timeZone = TZ)
   return Math.max(1000, target - now);
 }
 
+/** Kalenderdag-nøgle i TZ: YYYY-MM-DD */
+function dayKey(ts, timeZone = TZ) {
+  const p = getTzParts(new Date(ts), timeZone);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+/** Forrige kalenderdag (YYYY-MM-DD) i TZ. */
+function prevDayKey(key, timeZone = TZ) {
+  const [y, m, d] = key.split('-').map(Number);
+  const dayStart = zonedLocalToUtc(y, m, d, 0, 0, 0, timeZone);
+  const prev = getTzParts(new Date(dayStart - 1), timeZone);
+  return `${prev.year}-${String(prev.month).padStart(2, '0')}-${String(prev.day).padStart(2, '0')}`;
+}
+
+/** Start af næste kalenderdag efter ts i TZ. */
+function nextDayStart(ts, timeZone = TZ) {
+  const p = getTzParts(new Date(ts), timeZone);
+  const dayStart = zonedLocalToUtc(p.year, p.month, p.day, 0, 0, 0, timeZone);
+  const jump = getTzParts(new Date(dayStart + 26 * 60 * 60 * 1000), timeZone);
+  return zonedLocalToUtc(jump.year, jump.month, jump.day, 0, 0, 0, timeZone);
+}
+
+/**
+ * Iterér over kalenderdage et interval overlapper i TZ.
+ * cb(dayKey, overlapMs)
+ */
+function forEachDayOverlap(startMs, endMs, cb, timeZone = TZ) {
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const key = dayKey(cursor, timeZone);
+    const sliceEnd = Math.min(endMs, nextDayStart(cursor, timeZone));
+    cb(key, sliceEnd - cursor);
+    cursor = sliceEnd;
+  }
+}
+
 module.exports = {
   TZ,
   getTzParts,
@@ -84,4 +120,8 @@ module.exports = {
   formatDateShort,
   getYesterdayBounds,
   msUntilNextLocalTime,
+  dayKey,
+  prevDayKey,
+  nextDayStart,
+  forEachDayOverlap,
 };
