@@ -13,6 +13,8 @@ const { generateVoiceFunFact, normalizeTone } = require('../openaiFunFact');
 const { formatDateShort, dayKey, prevDayKey, forEachDayOverlap } = require('../copenhagenTime');
 
 const MAX_EMBEDS = 10;
+const EMBED_CHAR_MAX = 6000;
+const FIELDS_PER_EMBED = 25;
 const FIELD_VALUE_MAX = 1000;
 const MIN_SEGMENT_MS = 4 * 60 * 1000;
 const STREAK_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
@@ -266,6 +268,16 @@ function chunkFieldValue(text) {
   const parts = text.split('\n');
   let current = '';
   for (const part of parts) {
+    if (part.length > FIELD_VALUE_MAX) {
+      if (current) {
+        chunks.push(current);
+        current = '';
+      }
+      for (let i = 0; i < part.length; i += FIELD_VALUE_MAX) {
+        chunks.push(part.slice(i, i + FIELD_VALUE_MAX));
+      }
+      continue;
+    }
     const next = current ? `${current}\n${part}` : part;
     if (next.length > FIELD_VALUE_MAX && current) {
       chunks.push(current);
@@ -276,6 +288,87 @@ function chunkFieldValue(text) {
   }
   if (current) chunks.push(current);
   return chunks;
+}
+
+function countEmbedChars(title, description, footer, fields) {
+  let total = (title?.length || 0) + (footer?.length || 0);
+  if (description) total += description.length;
+  for (const field of fields) {
+    total += (field.name?.length || 0) + (field.value?.length || 0);
+  }
+  return total;
+}
+
+/** Pak felter i embeds der overholder Discords 6000-tegn- og 25-felt-grænser. */
+function packFieldsIntoEmbeds(allFields, { title, description, footer }) {
+  const embeds = [];
+  let index = 0;
+
+  while (index < allFields.length && embeds.length < MAX_EMBEDS) {
+    const isFirst = embeds.length === 0;
+    const embedTitle = isFirst ? title : `${title} (fortsat)`;
+    const embedDescription = isFirst ? description : undefined;
+    const batch = [];
+
+    while (index < allFields.length && batch.length < FIELDS_PER_EMBED) {
+      const field = allFields[index];
+      const next = [...batch, field];
+      const chars = countEmbedChars(embedTitle, embedDescription, footer, next);
+
+      if (chars > EMBED_CHAR_MAX) {
+        if (batch.length > 0) break;
+        const overhead =
+          countEmbedChars(embedTitle, embedDescription, footer, []) + (field.name?.length || 0);
+        const maxVal = Math.max(100, EMBED_CHAR_MAX - overhead - 1);
+        batch.push({ ...field, value: `${field.value.slice(0, maxVal)}…` });
+        index++;
+        break;
+      }
+
+      batch.push(field);
+      index++;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(embedTitle)
+      .setTimestamp()
+      .setFooter({ text: footer })
+      .addFields(batch);
+    if (embedDescription) embed.setDescription(embedDescription);
+    embeds.push(embed);
+  }
+
+  if (index < allFields.length && embeds.length > 0) {
+    const skipped = allFields.length - index;
+    const last = embeds[embeds.length - 1];
+    const note = `_Rapport afkortet — ${skipped} felt(er) udeladt (Discord-grænse)._`;
+    const existing = last.data.description;
+    last.setDescription(existing ? `${existing}\n\n${note}`.slice(0, 4096) : note);
+  }
+
+  return embeds;
+}
+
+function formatDmSendError(error, recipientId) {
+  const code = error?.code ?? error?.rawError?.code;
+  if (code === 50007) {
+    return (
+      `Kunne ikke sende DM til <@${recipientId}>. ` +
+      'Brugeren tillader ikke beskeder fra botten — slå **Tillad direkte beskeder fra serverens medlemmer** til ' +
+      'under serverens privatlivsindstillinger.'
+    );
+  }
+  if (code === 50035) {
+    return (
+      `Kunne ikke sende DM til <@${recipientId}>. ` +
+      'Rapporten er for stor til Discord. Prøv færre dage eller filtrér med bruger/kanal.'
+    );
+  }
+  if (code === 40003 || error?.status === 429) {
+    return `Kunne ikke sende DM til <@${recipientId}> — Discord rate limit. Vent et minut og prøv igen.`;
+  }
+  const detail = error?.message || 'ukendt fejl';
+  return `Kunne ikke sende DM til <@${recipientId}>: ${detail}${code ? ` (${code})` : ''}`;
 }
 
 /** Samlet VC-tid pr. bruger + alenetid (fra co-presence-segmenter) + mute/deaf/live/cam. */
@@ -537,25 +630,12 @@ function buildReportEmbeds(sessions, days, filterNote, funFact = null, options =
     ];
   }
 
-  const embeds = [];
-  const FIELDS_PER_EMBED = 25;
-
-  for (let i = 0; i < fields.length && embeds.length < MAX_EMBEDS; i += FIELDS_PER_EMBED) {
-    const chunk = fields.slice(i, i + FIELDS_PER_EMBED);
-    const embed = new EmbedBuilder()
-      .setTitle(i === 0 ? title : `${title} (fortsat)`)
-      .setTimestamp()
-      .setFooter({ text: footer })
-      .addFields(chunk);
-
-    if (i === 0) {
-      embed.setDescription([filterNote || null, descriptionExtra].filter(Boolean).join('\n'));
-    }
-
-    embeds.push(embed);
-  }
-
-  return embeds;
+  const fullDescription = [filterNote || null, descriptionExtra].filter(Boolean).join('\n');
+  return packFieldsIntoEmbeds(fields, {
+    title,
+    description: fullDescription || undefined,
+    footer,
+  });
 }
 
 /**
@@ -688,10 +768,17 @@ async function sendVoiceReport(client, options = {}) {
   }
 
   for (let i = 0; i < embedChunks.length; i++) {
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 600));
     const msgPayload = { embeds: embedChunks[i] };
     // Knapper kun på første besked
     if (i === 0) msgPayload.components = components;
-    await recipient.send(msgPayload);
+    try {
+      await recipient.send(msgPayload);
+    } catch (error) {
+      error.dmPart = i + 1;
+      error.dmParts = embedChunks.length;
+      throw error;
+    }
   }
 
   return {
@@ -806,11 +893,25 @@ module.exports = {
         ),
       );
     } catch (error) {
-      console.error('[voicerapport] Kunne ikke sende DM:', error);
+      const isDiscordSend =
+        error?.dmPart ||
+        error?.code === 50007 ||
+        error?.code === 50035 ||
+        error?.code === 40003 ||
+        error?.status === 429;
+
+      if (isDiscordSend) {
+        const partInfo =
+          error.dmParts > 1 ? ` (del ${error.dmPart}/${error.dmParts})` : '';
+        console.error(`[voicerapport] Kunne ikke sende DM${partInfo}:`, error);
+        return interaction.editReply({
+          content: withEmoji(formatDmSendError(error, VOICE_REPORT_USER_ID)),
+        });
+      }
+
+      console.error('[voicerapport] Kunne ikke bygge rapport:', error);
       return interaction.editReply({
-        content: withEmoji(
-          `Kunne ikke sende DM til <@${VOICE_REPORT_USER_ID}>. Tjek at brugeren tillader DM fra botten.`,
-        ),
+        content: withEmoji(`Kunne ikke bygge rapporten: ${error?.message || 'ukendt fejl'}`),
       });
     }
   },
