@@ -12,10 +12,14 @@ const { VOICE_REPORT_USER_ID, VOICE_TRACK_GUILD_ID } = require('../voiceConfig')
 const { generateVoiceFunFact, normalizeTone } = require('../openaiFunFact');
 const { formatDateShort, dayKey, prevDayKey, forEachDayOverlap } = require('../copenhagenTime');
 
-const MAX_EMBEDS = 10;
-const EMBED_CHAR_MAX = 6000;
+/** Max embeds pr. Discord-besked (API-loft). Vi sender færre pr. DM for sikker payload. */
+const EMBEDS_PER_MESSAGE = 2;
+/** Soft loft for antal embeds i én rapport (mange DM'er). */
+const MAX_REPORT_EMBEDS = 40;
+const EMBED_CHAR_MAX = 5500; // lidt under 6000 for sikkerhedsmargin
 const FIELDS_PER_EMBED = 25;
 const FIELD_VALUE_MAX = 1000;
+const MESSAGE_GAP_MS = 750;
 const MIN_SEGMENT_MS = 4 * 60 * 1000;
 const STREAK_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 const REPORT_TIMEZONE = 'Europe/Copenhagen';
@@ -299,40 +303,56 @@ function countEmbedChars(title, description, footer, fields) {
   return total;
 }
 
-/** Pak felter i embeds der overholder Discords 6000-tegn- og 25-felt-grænser. */
+/** Pak felter i embeds der overholder Discords tegn- og felt-grænser. */
 function packFieldsIntoEmbeds(allFields, { title, description, footer }) {
   const embeds = [];
   let index = 0;
+  const safeTitle = String(title || 'Voice-rapport').slice(0, 256);
+  const safeFooter = String(footer || '').slice(0, 2048);
+  const safeDescription = description ? String(description).slice(0, 4096) : undefined;
 
-  while (index < allFields.length && embeds.length < MAX_EMBEDS) {
+  while (index < allFields.length && embeds.length < MAX_REPORT_EMBEDS) {
     const isFirst = embeds.length === 0;
-    const embedTitle = isFirst ? title : `${title} (fortsat)`;
-    const embedDescription = isFirst ? description : undefined;
+    const part = embeds.length + 1;
+    const embedTitle = isFirst
+      ? safeTitle
+      : `${safeTitle} (${part})`.slice(0, 256);
+    const embedDescription = isFirst ? safeDescription : undefined;
     const batch = [];
 
     while (index < allFields.length && batch.length < FIELDS_PER_EMBED) {
       const field = allFields[index];
-      const next = [...batch, field];
-      const chars = countEmbedChars(embedTitle, embedDescription, footer, next);
+      const safeField = {
+        name: String(field.name || 'Felt').slice(0, 256),
+        value: String(field.value || '\u200b').slice(0, FIELD_VALUE_MAX),
+      };
+      const next = [...batch, safeField];
+      const chars = countEmbedChars(embedTitle, embedDescription, safeFooter, next);
 
       if (chars > EMBED_CHAR_MAX) {
         if (batch.length > 0) break;
         const overhead =
-          countEmbedChars(embedTitle, embedDescription, footer, []) + (field.name?.length || 0);
-        const maxVal = Math.max(100, EMBED_CHAR_MAX - overhead - 1);
-        batch.push({ ...field, value: `${field.value.slice(0, maxVal)}…` });
+          countEmbedChars(embedTitle, embedDescription, safeFooter, []) +
+          (safeField.name.length || 0);
+        const maxVal = Math.max(50, EMBED_CHAR_MAX - overhead - 1);
+        batch.push({
+          name: safeField.name,
+          value: `${safeField.value.slice(0, maxVal)}…`,
+        });
         index++;
         break;
       }
 
-      batch.push(field);
+      batch.push(safeField);
       index++;
     }
+
+    if (batch.length === 0) break;
 
     const embed = new EmbedBuilder()
       .setTitle(embedTitle)
       .setTimestamp()
-      .setFooter({ text: footer })
+      .setFooter({ text: safeFooter || ' ' })
       .addFields(batch);
     if (embedDescription) embed.setDescription(embedDescription);
     embeds.push(embed);
@@ -341,12 +361,21 @@ function packFieldsIntoEmbeds(allFields, { title, description, footer }) {
   if (index < allFields.length && embeds.length > 0) {
     const skipped = allFields.length - index;
     const last = embeds[embeds.length - 1];
-    const note = `_Rapport afkortet — ${skipped} felt(er) udeladt (Discord-grænse)._`;
+    const note = `_Rapport afkortet — ${skipped} felt(er) udeladt (for mange embeds)._`;
     const existing = last.data.description;
     last.setDescription(existing ? `${existing}\n\n${note}`.slice(0, 4096) : note);
   }
 
   return embeds;
+}
+
+/** Opdel embeds i DM-beskeder med få embeds pr. besked. */
+function chunkEmbedsForMessages(embeds) {
+  const chunks = [];
+  for (let i = 0; i < embeds.length; i += EMBEDS_PER_MESSAGE) {
+    chunks.push(embeds.slice(i, i + EMBEDS_PER_MESSAGE));
+  }
+  return chunks.length ? chunks : [[]];
 }
 
 function formatDmSendError(error, recipientId) {
@@ -361,7 +390,7 @@ function formatDmSendError(error, recipientId) {
   if (code === 50035) {
     return (
       `Kunne ikke sende DM til <@${recipientId}>. ` +
-      'Rapporten er for stor til Discord. Prøv færre dage eller filtrér med bruger/kanal.'
+      'En del af rapporten blev afvist af Discord (ugyldig/for stor payload). Prøv igen, eller filtrér med færre dage/bruger/kanal.'
     );
   }
   if (code === 40003 || error?.status === 429) {
@@ -762,19 +791,41 @@ async function sendVoiceReport(client, options = {}) {
   const components = buildToneButtons(payload.tone, contextId);
 
   const recipient = await client.users.fetch(VOICE_REPORT_USER_ID);
-  const embedChunks = [];
-  for (let i = 0; i < payload.embeds.length; i += 10) {
-    embedChunks.push(payload.embeds.slice(i, i + 10));
-  }
+  const embedChunks = chunkEmbedsForMessages(payload.embeds);
+  let messagesSent = 0;
 
   for (let i = 0; i < embedChunks.length; i++) {
-    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 600));
-    const msgPayload = { embeds: embedChunks[i] };
-    // Knapper kun på første besked
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, MESSAGE_GAP_MS));
+    const chunk = embedChunks[i];
+    if (!chunk.length) continue;
+
+    const msgPayload = { embeds: chunk };
+    // Tone-knapper kun på første besked
     if (i === 0) msgPayload.components = components;
+
     try {
       await recipient.send(msgPayload);
+      messagesSent++;
     } catch (error) {
+      // Fallback: send embeds enkeltvis hvis chunk stadig er for stor
+      if ((error?.code ?? error?.rawError?.code) === 50035 && chunk.length > 1) {
+        for (let j = 0; j < chunk.length; j++) {
+          if (j > 0 || i > 0) {
+            await new Promise((resolve) => setTimeout(resolve, MESSAGE_GAP_MS));
+          }
+          const single = { embeds: [chunk[j]] };
+          if (i === 0 && j === 0) single.components = components;
+          try {
+            await recipient.send(single);
+            messagesSent++;
+          } catch (inner) {
+            inner.dmPart = messagesSent + 1;
+            inner.dmParts = embedChunks.length;
+            throw inner;
+          }
+        }
+        continue;
+      }
       error.dmPart = i + 1;
       error.dmParts = embedChunks.length;
       throw error;
@@ -786,6 +837,8 @@ async function sendVoiceReport(client, options = {}) {
     recipient,
     funFact: payload.funFact,
     tone: payload.tone,
+    messagesSent,
+    embedCount: payload.embeds.length,
   };
 }
 
@@ -808,13 +861,20 @@ async function handleVoiceReportDm(message) {
   if (days > 90) days = 90;
 
   try {
-    const { sessions, tone: usedTone } = await sendVoiceReport(message.client, { days, tone });
+    const { sessions, tone: usedTone, messagesSent } = await sendVoiceReport(message.client, {
+      days,
+      tone,
+    });
+    const parts =
+      messagesSent > 1 ? `, ${messagesSent} beskeder` : '';
     await message.reply(
-      withEmoji(`Voice-rapport sendt (${sessions.length} sessioner, ${days} dage, tone: ${usedTone}).`),
+      withEmoji(
+        `Voice-rapport sendt (${sessions.length} sessioner, ${days} dage, tone: ${usedTone}${parts}).`,
+      ),
     );
   } catch (error) {
     console.error('[voicerapport] DM-rapport fejlede:', error);
-    await message.reply(withEmoji('Kunne ikke sende rapporten. Prøv igen om lidt.')).catch(() => {});
+    await message.reply(withEmoji(formatDmSendError(error, VOICE_REPORT_USER_ID))).catch(() => {});
   }
   return true;
 }
@@ -880,16 +940,18 @@ module.exports = {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
-      const { sessions, tone: usedTone } = await sendVoiceReport(interaction.client, {
+      const { sessions, tone: usedTone, messagesSent } = await sendVoiceReport(interaction.client, {
         days,
         userId: user?.id ?? null,
         channelId: channel?.id ?? null,
         channelName: channel?.name ?? null,
         tone,
       });
+      const parts =
+        messagesSent > 1 ? `, ${messagesSent} DM'er` : '';
       return interaction.editReply(
         withEmoji(
-          `Voice-rapport sendt som DM til <@${VOICE_REPORT_USER_ID}> (${sessions.length} sessioner, tone: ${usedTone}).`,
+          `Voice-rapport sendt som DM til <@${VOICE_REPORT_USER_ID}> (${sessions.length} sessioner, tone: ${usedTone}${parts}).`,
         ),
       );
     } catch (error) {
